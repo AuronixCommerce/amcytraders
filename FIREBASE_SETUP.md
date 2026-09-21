@@ -5,4 +5,4 @@
 3. Paste `firebase-realtime-database.rules.json` into Realtime Database → Rules and publish it.
 4. Open AMCY Trader and sign in using that administrator account.
 
-The application and database rules both enforce the designated administrator UID. Live data is stored at `businesses/sAYmgRLwq4g1MIYQPRrT5CeiqJB3`; all other authenticated users are denied access.
+The application and database rules both enforce the designated administrator UID. Live inventory, invoices, sales, stock movements, suppliers, purchase orders, and audit records are stored at `businesses/sAYmgRLwq4g1MIYQPRrT5CeiqJB3`; all other authenticated users are denied access.
