@@ -1,6 +1,5 @@
 const $ = (s, p=document) => p.querySelector(s);
 const $$ = (s, p=document) => [...p.querySelectorAll(s)];
-const STORAGE_KEY = 'amcy_trader_demo_v1';
 const ADMIN_UID = 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3';
 const DEFAULT_FIREBASE_CONFIG = {
   apiKey: 'AIzaSyB8AYL6JYpKJYxtS_1EsEMpMFdrjYIM06k',
@@ -18,6 +17,7 @@ const icons = {
   boxes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m3 8 5-3 5 3-5 3-5-3Zm0 0v6l5 3 5-3V8M11 17l5 3 5-3v-6l-5-3-3 1.8"/></svg>',
   swap:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h13m0 0-3-3m3 3-3 3M17 17H4m0 0 3 3m-3-3 3-3"/></svg>',
   cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 4h2l2 11h11l2-7H6M9 20h.01M17 20h.01"/></svg>',
+  receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6m-6 4h6m-6 4h3"/></svg>',
   users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6m2 3a5 5 0 0 1 3 4v2"/></svg>',
   chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V10m6 10V4m6 16v-7m5 7H2"/></svg>',
   history:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5m4-1v6l4 2"/></svg>',
@@ -28,51 +28,25 @@ const icons = {
 $$('[data-icon]').forEach(el => el.innerHTML = icons[el.dataset.icon] || '');
 
 const today = new Date();
-const ago = (n, h=10) => new Date(today.getFullYear(), today.getMonth(), today.getDate()-n, h).toISOString();
-const seed = {
-  profile:{businessName:'AMCY Trader',currency:'PKR',location:'Main Warehouse',adminName:'Admin User'},
-  products:[
-    {id:'p1',name:'Premium Cotton Roll',sku:'AMCY-TX-101',category:'Textiles',stock:84,reorder:25,cost:1850,price:2490,supplierId:'s1'},
-    {id:'p2',name:'Industrial Safety Gloves',sku:'AMCY-SF-205',category:'Safety',stock:9,reorder:20,cost:420,price:650,supplierId:'s2'},
-    {id:'p3',name:'Packing Tape 48mm',sku:'AMCY-PK-310',category:'Packaging',stock:146,reorder:40,cost:165,price:250,supplierId:'s3'},
-    {id:'p4',name:'Microfiber Cleaning Cloth',sku:'AMCY-CL-412',category:'Cleaning',stock:4,reorder:18,cost:195,price:320,supplierId:'s2'},
-    {id:'p5',name:'Heavy Duty Carton — L',sku:'AMCY-PK-322',category:'Packaging',stock:0,reorder:30,cost:140,price:230,supplierId:'s3'},
-    {id:'p6',name:'Nitrile Protective Mask',sku:'AMCY-SF-218',category:'Safety',stock:63,reorder:20,cost:85,price:140,supplierId:'s2'},
-    {id:'p7',name:'Polyester Thread Cone',sku:'AMCY-TX-118',category:'Textiles',stock:37,reorder:15,cost:690,price:950,supplierId:'s1'}
-  ],
-  suppliers:[
-    {id:'s1',name:'Faisal Textile Supply',contact:'Umair Faisal',phone:'+92 300 555 0142',email:'orders@faisaltextile.pk',lead:4,terms:'Net 15',address:'Kot Lakhpat, Lahore'},
-    {id:'s2',name:'ProSafe Industries',contact:'Hamza Ali',phone:'+92 321 884 9011',email:'sales@prosafe.pk',lead:3,terms:'Cash on delivery',address:'Sundar Industrial Estate, Lahore'},
-    {id:'s3',name:'PackRight Traders',contact:'Ahmed Raza',phone:'+92 333 902 4105',email:'supply@packright.pk',lead:2,terms:'Net 7',address:'Shahdara, Lahore'}
-  ],
-  movements:[
-    {id:'m1',productId:'p1',type:'in',qty:40,before:44,after:84,reference:'PO-1007',note:'Supplier delivery received',createdAt:ago(0,9),user:'Admin User'},
-    {id:'m2',productId:'p3',type:'out',qty:12,before:158,after:146,reference:'SO-2031',note:'Customer dispatch',createdAt:ago(0,11),user:'Admin User'},
-    {id:'m3',productId:'p4',type:'out',qty:8,before:12,after:4,reference:'SO-2030',note:'Counter sale',createdAt:ago(1,15),user:'Admin User'},
-    {id:'m4',productId:'p6',type:'adjustment',qty:63,before:65,after:63,reference:'COUNT-018',note:'Physical count correction',createdAt:ago(2,16),user:'Admin User'},
-    {id:'m5',productId:'p2',type:'out',qty:11,before:20,after:9,reference:'SO-2024',note:'Wholesale dispatch',createdAt:ago(3,12),user:'Admin User'},
-    {id:'m6',productId:'p7',type:'in',qty:25,before:12,after:37,reference:'PO-1004',note:'Restock received',createdAt:ago(4,10),user:'Admin User'},
-    {id:'m7',productId:'p5',type:'out',qty:16,before:16,after:0,reference:'SO-2018',note:'Customer dispatch',createdAt:ago(5,14),user:'Admin User'}
-  ],
-  purchases:[
-    {id:'PO-1008',supplierId:'s2',productId:'p2',qty:60,cost:410,status:'ordered',expected:ago(-3).slice(0,10),note:'Priority restock'},
-    {id:'PO-1009',supplierId:'s3',productId:'p5',qty:100,cost:132,status:'draft',expected:ago(-5).slice(0,10),note:'Awaiting price confirmation'},
-    {id:'PO-1007',supplierId:'s1',productId:'p1',qty:40,cost:1800,status:'received',expected:ago(0).slice(0,10),note:'Received complete'}
-  ],
-  audit:[
-    {id:'a1',action:'Stock received',detail:'40 units added to Premium Cotton Roll via PO-1007',createdAt:ago(0,9),user:'Admin User'},
-    {id:'a2',action:'Purchase order created',detail:'PO-1009 created for PackRight Traders',createdAt:ago(1,13),user:'Admin User'},
-    {id:'a3',action:'Stock adjustment',detail:'Nitrile Protective Mask corrected after physical count',createdAt:ago(2,16),user:'Admin User'}
-  ]
-};
+const blankState = () => ({
+  profile:{businessName:'AMCY Trader',currency:'PKR',location:'Main Warehouse',adminName:'Admin User',dataVersion:2},
+  products:[],suppliers:[],movements:[],purchases:[],sales:[],audit:[]
+});
+const toList = value => Array.isArray(value) ? value.filter(Boolean) : value && typeof value==='object' ? Object.values(value) : [];
+const normalizeState = raw => ({
+  profile:{...blankState().profile,...(raw?.profile||{})},products:toList(raw?.products),suppliers:toList(raw?.suppliers),movements:toList(raw?.movements),purchases:toList(raw?.purchases),sales:toList(raw?.sales),audit:toList(raw?.audit)
+});
+const isOriginalMockData = raw => {const products=toList(raw?.products),demoSkus=['AMCY-TX-101','AMCY-SF-205','AMCY-PK-310','AMCY-CL-412','AMCY-PK-322','AMCY-SF-218','AMCY-TX-118'];return !raw?.profile?.dataVersion&&products.length===7&&demoSkus.every(sku=>products.some(p=>p?.sku===sku))};
 
-let state = structuredClone(seed);
-let mode = 'demo';
+let state = blankState();
+let mode = 'firebase';
 let firebase = null;
 let firebaseConfig = null;
 let currentUser = null;
 let cloudOnline = false;
 let syncWarningShown = false;
+let stopRealtime = null;
+let cart = [];
 
 const money = n => `${state.profile.currency || 'PKR'} ${Number(n||0).toLocaleString('en-PK',{maximumFractionDigits:0})}`;
 const uid = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -83,17 +57,12 @@ const supplier = id => state.suppliers.find(x=>x.id===id);
 const formatDate = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(v));
 const formatTime = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(v));
 
-function loadDemo(){
-  try { state = JSON.parse(localStorage.getItem(STORAGE_KEY)) || structuredClone(seed); }
-  catch { state = structuredClone(seed); }
-}
-function saveDemo(){ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
 async function persist(){
   if(mode==='firebase' && firebase && currentUser?.uid===ADMIN_UID){
-    try{await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);cloudOnline=true;saveDemo();return;}
-    catch(error){console.error(error);cloudOnline=false;saveDemo();if(!syncWarningShown){syncWarningShown=true;toast('Cloud sync is unavailable. Changes are safely stored on this device.','error');}updateSync();return;}
+    try{await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);cloudOnline=true;return;}
+    catch(error){console.error(error);cloudOnline=false;if(!syncWarningShown){syncWarningShown=true;toast('Live sync failed. No changes were saved. Please retry.','error');}updateSync();throw error;}
   }
-  saveDemo();
+  throw new Error('Live database connection required');
 }
 async function addAudit(action,detail){state.audit.unshift({id:uid('a'),action,detail,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User'});await persist();}
 
@@ -106,26 +75,32 @@ async function bootFirebase(config){
     const auth=authMod.getAuth(app), db=dbMod.getDatabase(app);
     firebase={...authMod,...dbMod,auth,db}; firebaseConfig=config; mode='firebase';
     return true;
-  }catch(e){ console.error(e); toast('AMCY Cloud is temporarily unavailable. Demo access is still available.','error'); mode='demo'; cloudOnline=false; return false; }
+  }catch(e){ console.error(e); mode='offline'; cloudOnline=false; return false; }
 }
 
 async function init(){
   $('#dateLine').textContent=new Intl.DateTimeFormat('en-PK',{weekday:'long',day:'numeric',month:'long'}).format(today);
-  loadDemo();
   const ok=await bootFirebase(DEFAULT_FIREBASE_CONFIG);
   if(ok){
     firebase.onAuthStateChanged(firebase.auth,async user=>{
-      if(user?.uid===ADMIN_UID){currentUser=user;await loadFirebaseData();showApp();}
+      if(user?.uid===ADMIN_UID){currentUser=user;try{await loadFirebaseData();showApp();}catch{showAuth();$('#loginError').textContent='Signed in, but live data access was denied. Publish the database rules and reload.';}}
       else if(user){currentUser=null;await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}
       else showAuth();
     });
     updateSync(); return;
   }
-  showAuth(); updateSync();
+  showAuth();$('#loginError').textContent='AMCY Cloud is unavailable. Check your connection and reload.';updateSync();
 }
 async function loadFirebaseData(){
-  try{const snap=await firebase.get(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`));if(snap.exists())state=snap.val();else{state=structuredClone(seed);await persist();}cloudOnline=true;saveDemo();}
-  catch(error){console.error(error);cloudOnline=false;loadDemo();}
+  const businessRef=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);
+  try{
+    const snap=await firebase.get(businessRef);let raw=snap.exists()?snap.val():null;
+    if(!raw||isOriginalMockData(raw)){state=blankState();await firebase.set(businessRef,state);}
+    else{state=normalizeState(raw);if(state.profile.dataVersion!==2){state.profile.dataVersion=2;await firebase.set(businessRef,state);}}
+    cloudOnline=true;syncWarningShown=false;
+    if(stopRealtime)stopRealtime();
+    stopRealtime=firebase.onValue(businessRef,next=>{state=normalizeState(next.val());cloudOnline=true;syncWarningShown=false;renderAll();},error=>{console.error(error);cloudOnline=false;updateSync();toast('Realtime connection lost. Reconnecting…','error');});
+  }catch(error){console.error(error);cloudOnline=false;throw error;}
 }
 function showAuth(){$('#authScreen').classList.remove('hidden');$('#app').classList.add('hidden')}
 function showApp(){
@@ -135,23 +110,22 @@ function showApp(){
 }
 function updateSync(){
   const signedIn=mode==='firebase'&&currentUser?.uid===ADMIN_UID,live=signedIn&&cloudOnline;
-  $('#syncLabel').textContent=live?'AMCY Cloud':signedIn?'Offline safe mode':'Demo workspace';$('#syncSub').textContent=live?'Realtime sync active':signedIn?'Saved on this device':'Local preview data';
-  $('#firebaseStatus').textContent=live?'Connected':signedIn?'Offline safe':'Ready';$('#firebaseStatus').className=`status-pill ${live?'healthy':'warning'}`;
+  $('#syncLabel').textContent=live?'AMCY Cloud':signedIn?'Reconnecting…':'Secure workspace';$('#syncSub').textContent=live?'Realtime sync active':signedIn?'Live data unavailable':'Sign in required';
+  $('#firebaseStatus').textContent=live?'Connected':signedIn?'Reconnecting':'Ready';$('#firebaseStatus').className=`status-pill ${live?'healthy':'warning'}`;
 }
 
 $('#loginForm').addEventListener('submit',async e=>{
   e.preventDefault();$('#loginError').textContent='';
-  if(mode!=='firebase'){ $('#loginError').textContent='AMCY Cloud is unavailable right now. Use demo preview and try again shortly.'; return; }
+  if(mode!=='firebase'){ $('#loginError').textContent='AMCY Cloud is unavailable right now. Check your connection and reload.'; return; }
   const submit=$('#loginForm button[type="submit"]');submit.disabled=true;submit.firstElementChild.textContent='Signing in…';
   try{await firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence);const credential=await firebase.signInWithEmailAndPassword(firebase.auth,$('#loginEmail').value.trim(),$('#loginPassword').value);if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}}
   catch(err){console.error(err);const messages={'auth/invalid-credential':'Email or password is incorrect.','auth/user-disabled':'This administrator account is disabled.','auth/too-many-requests':'Too many attempts. Please wait and try again.','auth/network-request-failed':'Network error. Check your connection and try again.'};$('#loginError').textContent=messages[err.code]||`Sign-in failed (${String(err.code||'unknown').replace('auth/','')}).`;}
   finally{submit.disabled=false;submit.firstElementChild.textContent='Sign in securely';}
 });
-$('#demoAccess').addEventListener('click',()=>{currentUser=null;loadDemo();showApp();updateSync()});
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
-$('#logoutBtn').addEventListener('click',async()=>{if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
+$('#logoutBtn').addEventListener('click',async()=>{if(stopRealtime){stopRealtime();stopRealtime=null;}if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
-const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings'};
+const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings'};
 function go(view){
   $$('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));
   $$('#mainNav button').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
@@ -164,7 +138,7 @@ $('#menuBtn').addEventListener('click',()=>$('#sidebar').classList.add('open'));
 $('#closeSidebar').addEventListener('click',()=>$('#sidebar').classList.remove('open'));
 
 function renderAll(){
-  renderKpis();renderDashboard();renderInventory();renderMovements();renderPurchases();renderSuppliers();renderReports();renderAudit();populateSelects();renderProfile();updateSync();
+  renderKpis();renderDashboard();renderInventory();renderMovements();renderPOS();renderSales();renderPurchases();renderSuppliers();renderReports();renderAudit();populateSelects();renderProfile();updateSync();
 }
 function renderKpis(){
   const value=state.products.reduce((s,p)=>s+p.stock*p.cost,0), units=state.products.reduce((s,p)=>s+p.stock,0), low=state.products.filter(p=>p.stock<=p.reorder), open=state.purchases.filter(p=>p.status!=='received');
@@ -189,6 +163,24 @@ function renderMovements(){
   const q=$('#movementSearch').value.toLowerCase(),type=$('#movementTypeFilter').value;const items=[...state.movements].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).filter(m=>{const p=product(m.productId);return(`${p?.name||''} ${m.reference||''}`).toLowerCase().includes(q)&&(type==='all'||m.type===type)});
   $('#movementsTable').innerHTML=items.map(m=>`<tr><td>${formatTime(m.createdAt)}</td><td><strong>${esc(product(m.productId)?.name||'Deleted product')}</strong><br><small>${esc(product(m.productId)?.sku||'')}</small></td><td><span class="type-badge ${m.type}">${m.type==='in'?'Stock in':m.type==='out'?'Stock out':'Adjustment'}</span></td><td><strong>${m.type==='out'?'-':'+'}${m.qty}</strong></td><td>${m.before}</td><td>${m.after}</td><td>${esc(m.reference||'—')}</td><td>${esc(m.user||'Admin')}</td></tr>`).join('')||'<tr><td colspan="8">No movements match these filters.</td></tr>';
 }
+function renderPOS(){
+  const q=($('#posSearch')?.value||'').toLowerCase();
+  const available=state.products.filter(p=>(`${p.name} ${p.sku} ${p.category}`).toLowerCase().includes(q));
+  $('#posProducts').innerHTML=available.map(p=>`<button class="pos-product" data-pos-product="${p.id}" ${p.stock<=0?'disabled':''}><b>${esc(p.name)}</b><small>${esc(p.sku)} · ${p.stock} available</small><strong>${money(p.price)}</strong></button>`).join('')||'<div class="empty-state"><h3>No products available</h3><p>Add products to inventory before creating a sale.</p></div>';
+  cart=cart.filter(item=>product(item.productId));renderCart();
+}
+function cartTotals(){const subtotal=cart.reduce((sum,item)=>{const p=product(item.productId);return sum+(p?.price||0)*item.qty},0),discount=Math.min(Math.max(0,Number($('#saleDiscount')?.value||0)),subtotal);return{subtotal,discount,total:subtotal-discount,units:cart.reduce((s,i)=>s+i.qty,0)}}
+function renderCart(){
+  $('#cartItems').innerHTML=cart.length?cart.map(item=>{const p=product(item.productId);return `<div class="cart-row"><div><b>${esc(p.name)}</b><small>${money(p.price)} each · ${money(p.price*item.qty)}</small></div><div class="qty-control"><button data-cart-change="-1" data-cart-id="${p.id}">−</button><span>${item.qty}</span><button data-cart-change="1" data-cart-id="${p.id}" ${item.qty>=p.stock?'disabled':''}>＋</button></div><button class="cart-remove" data-cart-remove="${p.id}" title="Remove">×</button></div>`}).join(''):'<div class="cart-empty">Select a product to begin this invoice.</div>';
+  const t=cartTotals();$('#cartUnits').textContent=t.units;$('#cartSubtotal').textContent=money(t.subtotal);$('#cartTotal').textContent=money(t.total);$('#completeSale').disabled=!cart.length||!cloudOnline;
+}
+function renderSales(){
+  $('#salesTable').innerHTML=[...state.sales].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(s=>`<tr><td><strong>${esc(s.id)}</strong></td><td>${esc(s.customer||'Walk-in customer')}<br><small>${esc(s.phone||'')}</small></td><td>${toList(s.items).reduce((n,i)=>n+i.qty,0)} units</td><td>${esc(s.payment)}</td><td><strong>${money(s.total)}</strong></td><td>${formatTime(s.createdAt)}</td><td><button class="receipt-btn" data-print-sale="${s.id}">Print</button></td></tr>`).join('')||'<tr><td colspan="7">No sales recorded yet.</td></tr>';
+}
+function receiptHtml(sale){
+  const business=esc(state.profile.businessName||'AMCY Trader'),location=esc(state.profile.location||'');return `<!doctype html><html><head><title>${esc(sale.id)}</title><style>body{font:14px Arial,sans-serif;color:#111;margin:0;padding:24px}.receipt{max-width:360px;margin:auto}h1{text-align:center;font-size:22px;margin:0}.location{text-align:center;color:#555;margin:5px 0 18px}.meta{border-top:1px dashed #777;border-bottom:1px dashed #777;padding:10px 0;margin:10px 0}.meta div,.line,.totals div{display:flex;justify-content:space-between;gap:15px}.line{padding:7px 0;border-bottom:1px dotted #ccc}.line span:first-child{flex:1}.line small{display:block;color:#666}.totals{margin-top:12px}.totals div{padding:4px 0}.totals .grand{font-size:18px;font-weight:bold;border-top:2px solid #111;margin-top:7px;padding-top:9px}.thanks{text-align:center;margin-top:24px;font-weight:bold}@media print{body{padding:0}.receipt{max-width:none}}</style></head><body><div class="receipt"><h1>${business}</h1><div class="location">${location}</div><div class="meta"><div><b>Invoice</b><span>${esc(sale.id)}</span></div><div><b>Date</b><span>${formatTime(sale.createdAt)}</span></div><div><b>Customer</b><span>${esc(sale.customer||'Walk-in customer')}</span></div>${sale.phone?`<div><b>Phone</b><span>${esc(sale.phone)}</span></div>`:''}<div><b>Payment</b><span>${esc(sale.payment)}</span></div></div>${toList(sale.items).map(i=>`<div class="line"><span>${esc(i.name)}<small>${i.qty} × ${money(i.price)}</small></span><b>${money(i.qty*i.price)}</b></div>`).join('')}<div class="totals"><div><span>Subtotal</span><b>${money(sale.subtotal)}</b></div>${sale.discount?`<div><span>Discount</span><b>−${money(sale.discount)}</b></div>`:''}<div class="grand"><span>Total</span><b>${money(sale.total)}</b></div></div><p class="thanks">Thank you for your purchase</p></div><script>window.onload=()=>{window.print()}<\/script></body></html>`;
+}
+function printReceipt(sale,targetWindow){const w=targetWindow||window.open('','_blank','width=440,height=760');if(!w){toast('Allow pop-ups to print the receipt.','error');return}w.document.open();w.document.write(receiptHtml(sale));w.document.close();}
 let poFilter='all';
 function renderPurchases(){
   const orders=[...state.purchases].filter(p=>poFilter==='all'||p.status===poFilter).sort((a,b)=>b.id.localeCompare(a.id));
@@ -215,6 +207,22 @@ function renderProfile(){
 
 ['inventorySearch','categoryFilter','stockFilter'].forEach(id=>$('#'+id).addEventListener(id.includes('Search')?'input':'change',renderInventory));
 ['movementSearch','movementTypeFilter'].forEach(id=>$('#'+id).addEventListener(id.includes('Search')?'input':'change',renderMovements));
+$('#posSearch').addEventListener('input',renderPOS);
+$('#saleDiscount').addEventListener('input',renderCart);
+$('#posProducts').addEventListener('click',e=>{const b=e.target.closest('[data-pos-product]');if(!b)return;const p=product(b.dataset.posProduct);if(!p||p.stock<=0)return;const item=cart.find(i=>i.productId===p.id);if(item){if(item.qty>=p.stock){toast('No more units are available.','error');return}item.qty++;}else cart.push({productId:p.id,qty:1});renderCart()});
+$('#cartItems').addEventListener('click',e=>{const remove=e.target.closest('[data-cart-remove]'),change=e.target.closest('[data-cart-change]');if(remove)cart=cart.filter(i=>i.productId!==remove.dataset.cartRemove);if(change){const item=cart.find(i=>i.productId===change.dataset.cartId),p=product(change.dataset.cartId),next=item.qty+Number(change.dataset.cartChange);if(next<=0)cart=cart.filter(i=>i.productId!==item.productId);else if(next<=p.stock)item.qty=next;}renderCart()});
+$('#clearCart').addEventListener('click',()=>{cart=[];$('#saleDiscount').value=0;$('#saleError').textContent='';renderCart()});
+$('#completeSale').addEventListener('click',async()=>{
+  $('#saleError').textContent='';if(!cart.length)return;const printWindow=window.open('','_blank','width=440,height=760');if(printWindow)printWindow.document.write('<p style="font-family:Arial;padding:24px">Preparing receipt…</p>');
+  const totals=cartTotals(),sale={id:`INV-${Date.now().toString().slice(-10)}`,customer:$('#saleCustomer').value.trim()||'Walk-in customer',phone:$('#salePhone').value.trim(),payment:$('#salePayment').value,items:cart.map(item=>{const p=product(item.productId);return{productId:p.id,name:p.name,sku:p.sku,price:p.price,qty:item.qty}}),subtotal:totals.subtotal,discount:totals.discount,total:totals.total,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User'};
+  const button=$('#completeSale');button.disabled=true;button.firstElementChild.textContent='Completing sale…';
+  try{
+    const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);const result=await firebase.runTransaction(root,current=>{const live=normalizeState(current);for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId);if(!p||p.stock<item.qty)throw new Error(`${item.name} no longer has enough stock`);}for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId),before=p.stock;p.stock-=item.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'out',qty:item.qty,before,after:p.stock,reference:sale.id,note:`Customer sale — ${sale.customer}`,createdAt:sale.createdAt,user:sale.user});}live.sales.unshift(sale);live.audit.unshift({id:uid('a'),action:'Sale completed',detail:`${sale.id} for ${sale.customer} — ${money(sale.total)}`,createdAt:sale.createdAt,user:sale.user});return live;},{applyLocally:false});
+    if(!result.committed)throw new Error('Sale could not be committed');cart=[];$('#saleCustomer').value='';$('#salePhone').value='';$('#saleDiscount').value=0;renderCart();toast(`${sale.id} completed`);printReceipt(sale,printWindow);
+  }catch(error){console.error(error);if(printWindow)printWindow.close();$('#saleError').textContent=error.message||'Sale could not be completed. Please retry.';}
+  finally{button.disabled=!cart.length;button.firstElementChild.textContent='Complete sale & print receipt';}
+});
+$('#salesTable').addEventListener('click',e=>{const b=e.target.closest('[data-print-sale]');if(!b)return;const sale=state.sales.find(s=>s.id===b.dataset.printSale);if(sale)printReceipt(sale)});
 $('#poTabs').addEventListener('click',e=>{const b=e.target.closest('[data-po]');if(!b)return;poFilter=b.dataset.po;$$('#poTabs button').forEach(x=>x.classList.toggle('active',x===b));renderPurchases()});
 
 function openDialog(name,trigger){
@@ -246,14 +254,13 @@ function csvExport(){
   const rows=[['Product','SKU','Category','Stock','Reorder Level','Purchase Cost','Selling Price','Stock Value','Supplier'],...state.products.map(p=>[p.name,p.sku,p.category,p.stock,p.reorder,p.cost,p.price,p.stock*p.cost,supplier(p.supplierId)?.name||''])];const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`AMCY-Inventory-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Inventory report downloaded');
 }
 ['exportInventory','quickExport','downloadReport'].forEach(id=>$('#'+id).addEventListener('click',csvExport));
-$('#clearAudit').addEventListener('click',async()=>{if(mode!=='demo'){toast('Audit history cannot be cleared in live mode.','error');return}state.audit=[];await persist();renderAudit();toast('Demo audit log cleared')});
-$('#saveProfile').addEventListener('click',async()=>{state.profile={businessName:$('#businessName').value.trim(),currency:$('#currencySetting').value,location:$('#locationSetting').value.trim(),adminName:$('#nameSetting').value.trim()};await addAudit('Business profile updated','Company settings were changed');renderAll();toast('Business profile saved')});
+$('#saveProfile').addEventListener('click',async()=>{state.profile={...state.profile,businessName:$('#businessName').value.trim(),currency:$('#currencySetting').value,location:$('#locationSetting').value.trim(),adminName:$('#nameSetting').value.trim(),dataVersion:2};await addAudit('Business profile updated','Company settings were changed');renderAll();toast('Business profile saved')});
 
 $('#globalSearchBtn').addEventListener('click',()=>{$('#searchOverlay').classList.remove('hidden');$('#globalSearch').focus();renderSearch('')});
 $('#searchOverlay').addEventListener('click',e=>{if(e.target===$('#searchOverlay'))$('#searchOverlay').classList.add('hidden')});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$('#searchOverlay').classList.add('hidden');if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();$('#globalSearchBtn').click()}});
 $('#globalSearch').addEventListener('input',e=>renderSearch(e.target.value));
-function renderSearch(q){q=q.toLowerCase();const results=[...state.products.map(x=>({type:'Product',title:x.name,meta:`${x.sku} · ${x.stock} units`,view:'inventory'})),...state.suppliers.map(x=>({type:'Supplier',title:x.name,meta:x.contact,view:'suppliers'})),...state.purchases.map(x=>({type:'Purchase order',title:x.id,meta:supplier(x.supplierId)?.name||'',view:'purchases'}))].filter(x=>(x.title+' '+x.meta).toLowerCase().includes(q)).slice(0,12);$('#searchResults').innerHTML=results.map(r=>`<button class="search-result" data-result-view="${r.view}"><span>${r.type[0]}</span><div><b>${esc(r.title)}</b><small>${esc(r.type)} · ${esc(r.meta)}</small></div></button>`).join('')||'<div class="empty-state"><p>No matching records.</p></div>'}
+function renderSearch(q){q=q.toLowerCase();const results=[...state.products.map(x=>({type:'Product',title:x.name,meta:`${x.sku} · ${x.stock} units`,view:'inventory'})),...state.suppliers.map(x=>({type:'Supplier',title:x.name,meta:x.contact,view:'suppliers'})),...state.purchases.map(x=>({type:'Purchase order',title:x.id,meta:supplier(x.supplierId)?.name||'',view:'purchases'})),...state.sales.map(x=>({type:'Invoice',title:x.id,meta:x.customer||'Walk-in customer',view:'sales'}))].filter(x=>(x.title+' '+x.meta).toLowerCase().includes(q)).slice(0,12);$('#searchResults').innerHTML=results.map(r=>`<button class="search-result" data-result-view="${r.view}"><span>${r.type[0]}</span><div><b>${esc(r.title)}</b><small>${esc(r.type)} · ${esc(r.meta)}</small></div></button>`).join('')||'<div class="empty-state"><p>No matching records.</p></div>'}
 $('#searchResults').addEventListener('click',e=>{const b=e.target.closest('[data-result-view]');if(b){go(b.dataset.resultView);$('#searchOverlay').classList.add('hidden')}});
 
 function toast(message,type='success'){const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=message;$('#toastContainer').append(el);setTimeout(()=>el.remove(),3200)}
