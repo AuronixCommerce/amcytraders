@@ -1,0 +1,188 @@
+:root {
+  --bg: #08100d;
+  --sidebar: #0b1310;
+  --surface: #101814;
+  --surface-2: #151e19;
+  --surface-3: #1a241e;
+  --line: #304038;
+  --text: #e5ece8;
+  --muted: #899790;
+  --green: #8db29f;
+  --green-2: #6f9582;
+  --blue: #8db29f;
+  --violet: #8db29f;
+  --amber: #c5a46e;
+  --red: #c87f79;
+  --radius: 2px;
+  --shadow: none;
+}
+
+*, *::before, *::after {
+  box-shadow: none !important;
+  text-shadow: none !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  animation: none !important;
+  transition: none !important;
+}
+
+body,
+.workspace,
+.auth-brand,
+.auth-panel {
+  background: var(--bg) !important;
+}
+
+.auth-brand::after {
+  display: none;
+}
+
+.topbar {
+  background: #08100d !important;
+}
+
+.kpi,
+.panel,
+.po-card,
+.supplier-card,
+.report-hero,
+.pos-product,
+.quick-actions button,
+.sidebar-user,
+.searchbox,
+.value-chip,
+.command-box,
+.invoice-detail-hero,
+.invoice-detail-card,
+.invoice-line-items,
+.danger-card,
+.cloud-details > div,
+dialog,
+input,
+select,
+textarea,
+button,
+.status-pill,
+.type-badge,
+.brand-mark,
+.avatar,
+.product-icon,
+.supplier-avatar,
+.kpi-icon,
+.cart-row,
+.qty-control,
+.change-row,
+.checkout-steps,
+.security-note,
+.stock-hint,
+.toast {
+  border-radius: 2px !important;
+}
+
+.kpi,
+.panel,
+.po-card,
+.supplier-card,
+.report-hero,
+.invoice-detail-hero {
+  background: var(--surface) !important;
+}
+
+.sidebar nav button.active,
+.segmented button.active,
+.subtabs button.active,
+.settings-layout > aside button.active {
+  background: #1b2922 !important;
+  color: #c7d8d0 !important;
+  border-left: 2px solid var(--green);
+}
+
+.sidebar nav button:hover,
+.pos-product:hover,
+.search-result:hover,
+.primary-btn:hover {
+  transform: none !important;
+}
+
+.primary-btn {
+  background: #8db29f !important;
+  color: #07100d !important;
+}
+
+.eyebrow,
+.primary-btn,
+.text-btn,
+.receipt-btn,
+.small-btn,
+.stock-number,
+.kpi strong {
+  letter-spacing: .02em;
+}
+
+.kpi-icon,
+.quick-actions button > span,
+.empty-state > span,
+.audit-item > span,
+.sidebar nav button > span {
+  display: none !important;
+}
+
+.quick-actions button {
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-actions small {
+  margin-top: 5px;
+}
+
+.sync-state > span,
+.pulse,
+.chart-legend i,
+.health-legend i,
+.sync-mark i {
+  border-radius: 0 !important;
+}
+
+.movement-chart {
+  background: transparent !important;
+}
+
+.bar,
+.category-bar > div:last-child,
+.category-bar i {
+  border-radius: 0 !important;
+}
+
+.donut {
+  width: 145px;
+  height: 110px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--green);
+  border-radius: 0 !important;
+  background: var(--surface-2) !important;
+}
+
+.donut > div {
+  width: auto;
+  height: auto;
+  background: transparent !important;
+  border-radius: 0 !important;
+}
+
+.search-overlay,
+dialog::backdrop {
+  background: rgba(2, 6, 4, .88) !important;
+}
+
+.checkout-button,
+.receipt-btn.view {
+  background: #8db29f !important;
+  color: #07100d !important;
+}
+
+@media (max-width: 780px) {
+  .sidebar {
+    box-shadow: none !important;
+  }
+}

@@ -251,3 +251,44 @@ body {
   from { transform: translateX(-120%); }
   to { transform: translateX(360%); }
 }
+
+/* AMCY operations system: flat, restrained, and deliberately non-decorative. */
+.amcy-frame-shell {
+  background: #08100d;
+}
+
+.amcy-app-frame {
+  transition: none;
+}
+
+.amcy-boot-mark,
+.amcy-error-icon {
+  border-radius: 2px;
+  background: #263b32;
+  box-shadow: none;
+  color: #dce7e1;
+}
+
+.amcy-error-icon {
+  width: auto;
+  padding: 0 12px;
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+
+.amcy-boot-line {
+  height: 1px;
+  border-radius: 0;
+}
+
+.amcy-boot-line i {
+  border-radius: 0;
+  background: #789b8a;
+  animation: none;
+}
+
+.amcy-retry {
+  border-radius: 2px;
+  background: #8db29f;
+  color: #07100d;
+}

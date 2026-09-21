@@ -15,6 +15,7 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Transaction-safe permanent product deletion with preserved historical invoices and stock movements
 - Reports and CSV inventory export
 - Responsive desktop and mobile business interface
+- Flat, restrained operations-system visual language without decorative gradients, glass effects, floating ornaments, neon colors, or motion-heavy hover treatments
 
 ## Development
 

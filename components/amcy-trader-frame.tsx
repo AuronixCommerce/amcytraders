@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ShieldCheck } from "lucide-react";
 
 export function AmcyTraderFrame() {
   const [loaded, setLoaded] = useState(false);
@@ -31,12 +30,12 @@ export function AmcyTraderFrame() {
 
       {failed ? (
         <section className="amcy-frame-error">
-          <div className="amcy-error-icon"><ShieldCheck /></div>
+          <div className="amcy-error-icon">ERROR</div>
           <p>AMCY TRADER</p>
           <h1>The workspace could not be opened</h1>
           <span>Check your connection, then try loading the secure workspace again.</span>
           <Button onClick={retry} className="amcy-retry">
-            <RefreshCw /> Try again
+            Reload workspace
           </Button>
         </section>
       ) : null}
