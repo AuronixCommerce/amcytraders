@@ -1,6 +1,8 @@
 const $ = (s, p=document) => p.querySelector(s);
 const $$ = (s, p=document) => [...p.querySelectorAll(s)];
 const ADMIN_UID = 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3';
+const SESSION_EXPIRES_KEY = 'amcy_admin_session_expires_at';
+const SESSION_DURATION_MS = 180 * 24 * 60 * 60 * 1000;
 const DEFAULT_FIREBASE_CONFIG = {
   apiKey: 'AIzaSyB8AYL6JYpKJYxtS_1EsEMpMFdrjYIM06k',
   authDomain: 'amcy-traders.firebaseapp.com',
@@ -67,6 +69,13 @@ const product = id => state.products.find(x=>x.id===id);
 const supplier = id => state.suppliers.find(x=>x.id===id);
 const formatDate = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(v));
 const formatTime = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(v));
+const sessionExpiry = () => Number(localStorage.getItem(SESSION_EXPIRES_KEY)||0);
+const beginTrustedSession = () => localStorage.setItem(SESSION_EXPIRES_KEY,String(Date.now()+SESSION_DURATION_MS));
+const clearTrustedSession = () => localStorage.removeItem(SESSION_EXPIRES_KEY);
+const trustedSessionExpired = () => sessionExpiry()>0&&Date.now()>=sessionExpiry();
+async function enforceTrustedSessionDeadline(){if(!currentUser||!trustedSessionExpired())return;clearTrustedSession();if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);await firebase.signOut(firebase.auth);}
+setInterval(enforceTrustedSessionDeadline,5*60*1000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')enforceTrustedSessionDeadline()});
 
 async function persist(){
   if(mode==='firebase' && firebase && currentUser?.uid===ADMIN_UID){
@@ -98,7 +107,11 @@ async function init(){
   if(ok){
     invoiceFirebase.onAuthStateChanged(invoiceFirebase.auth,user=>{invoiceUser=user||null;invoiceCloudOnline=!!user;if($('#salesTable'))renderSales();});
     firebase.onAuthStateChanged(firebase.auth,async user=>{
-      if(user?.uid===ADMIN_UID){currentUser=user;try{await loadFirebaseData();showApp();}catch{showAuth();$('#loginError').textContent='Signed in, but live data access was denied. Publish the database rules and reload.';}}
+      if(user?.uid===ADMIN_UID){
+        if(trustedSessionExpired()){clearTrustedSession();currentUser=null;if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='Your trusted-device session expired after 6 months. Please sign in again.';return;}
+        if(!sessionExpiry())beginTrustedSession();
+        currentUser=user;try{await user.getIdToken();await loadFirebaseData();showApp();}catch{showAuth();$('#loginError').textContent='Signed in, but live data access was denied. Publish the database rules and reload.';}
+      }
       else if(user){currentUser=null;await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}
       else showAuth();
     });
@@ -138,6 +151,7 @@ $('#loginForm').addEventListener('submit',async e=>{
     await Promise.all([firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence),invoiceFirebase.setPersistence(invoiceFirebase.auth,invoiceFirebase.browserLocalPersistence)]);
     const credential=await firebase.signInWithEmailAndPassword(firebase.auth,email,password);
     if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';return;}
+    beginTrustedSession();
     try{await invoiceFirebase.signInWithEmailAndPassword(invoiceFirebase.auth,email,password);invoiceCloudOnline=true;}
     catch(invoiceError){console.error('Invoice vault sign-in failed',invoiceError);invoiceCloudOnline=false;setTimeout(()=>toast('Main workspace connected. Invoice vault needs the same admin login in its Firebase Authentication.','error'),600);}
   }
@@ -145,7 +159,7 @@ $('#loginForm').addEventListener('submit',async e=>{
   finally{submit.disabled=false;submit.firstElementChild.textContent='Sign in securely';}
 });
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
-$('#logoutBtn').addEventListener('click',async()=>{if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
+$('#logoutBtn').addEventListener('click',async()=>{clearTrustedSession();if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
 const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings'};
 function go(view){

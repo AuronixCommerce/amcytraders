@@ -5,6 +5,7 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 ## Included
 
 - UID-locked administrator sign-in
+- Firebase-issued JWT authentication with automatic refresh and a 180-day trusted-device session
 - Realtime inventory, suppliers, stock movements, purchase orders, and audit history
 - Premium customer checkout with product search, quantities, discount, payment type, cash received, and change due
 - Transaction-safe stock deduction when a sale is completed
