@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#071412" />
+  <meta name="description" content="AMCY Trader inventory and stock operations software." />
+  <title>AMCY Trader — Inventory Operations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23091411'/%3E%3Cpath d='M15 45 28 16h9l12 29h-9l-2-6H26l-3 6Zm14-13h7l-3-9Z' fill='%2365e6b4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css" />
+  <style>.cloud-details{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}.cloud-details>div{border:1px solid var(--line);background:#0a1613;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px}.cloud-details span{color:var(--muted);font-size:.68rem}.cloud-details b{font-size:.8rem;color:var(--text)}@media(max-width:520px){.cloud-details{grid-template-columns:1fr}}</style>
+</head>
+<body>
+  <div id="authScreen" class="auth-shell">
+    <section class="auth-brand">
+      <div class="brand-lockup"><span class="brand-mark">A</span><span>AMCY TRADER</span></div>
+      <div class="auth-copy">
+        <span class="eyebrow">BUSINESS CONTROL SYSTEM</span>
+        <h1>Inventory clarity.<br><em>Every unit accounted for.</em></h1>
+        <p>One secure workspace for products, purchases, suppliers, and every stock movement.</p>
+      </div>
+      <div class="auth-stats">
+        <div><strong>Live</strong><span>Realtime sync</span></div>
+        <div><strong>24/7</strong><span>Stock visibility</span></div>
+        <div><strong>Admin</strong><span>Protected access</span></div>
+      </div>
+    </section>
+    <section class="auth-panel">
+      <form id="loginForm" class="login-card">
+        <div class="mobile-brand"><span class="brand-mark">A</span><b>AMCY TRADER</b></div>
+        <span class="eyebrow">ADMIN PORTAL</span>
+        <h2>Welcome back</h2>
+        <p>Sign in to continue to stock operations.</p>
+        <label>Email address<input id="loginEmail" type="email" autocomplete="username" placeholder="admin@amcytrader.com" required></label>
+        <label>Password<div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Enter your password" required><button type="button" id="togglePassword" aria-label="Show password">Show</button></div></label>
+        <div id="loginError" class="form-error" role="alert"></div>
+        <button class="primary-btn full" type="submit"><span>Sign in securely</span><span>→</span></button>
+        <button class="demo-link" type="button" id="demoAccess">Preview with demo data</button>
+        <small>AMCY secure access protects the admin workspace.</small>
+      </form>
+    </section>
+  </div>
+
+  <div id="app" class="app-shell hidden">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand"><span class="brand-mark">A</span><div><b>AMCY TRADER</b><small>Inventory OS</small></div><button id="closeSidebar" aria-label="Close navigation">×</button></div>
+      <nav id="mainNav">
+        <p>WORKSPACE</p>
+        <button data-view="dashboard" class="active"><span data-icon="grid"></span>Overview</button>
+        <button data-view="inventory"><span data-icon="box"></span>Inventory <i id="lowStockBadge">0</i></button>
+        <button data-view="movements"><span data-icon="swap"></span>Stock movements</button>
+        <p>OPERATIONS</p>
+        <button data-view="purchases"><span data-icon="cart"></span>Purchase orders</button>
+        <button data-view="suppliers"><span data-icon="users"></span>Suppliers</button>
+        <button data-view="reports"><span data-icon="chart"></span>Reports</button>
+        <p>SYSTEM</p>
+        <button data-view="audit"><span data-icon="history"></span>Audit log</button>
+        <button data-view="settings"><span data-icon="settings"></span>Settings</button>
+      </nav>
+      <div class="sidebar-user"><div class="avatar">AD</div><div><b id="adminName">Admin User</b><small id="adminEmail">admin@amcytrader.com</small></div><button id="logoutBtn" title="Sign out">↗</button></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button id="menuBtn" class="icon-btn menu-btn" aria-label="Open navigation">☰</button>
+        <div><p id="dateLine"></p><h1 id="pageTitle">Operations overview</h1></div>
+        <div class="top-actions">
+          <div class="sync-state"><span></span><div><b id="syncLabel">Demo workspace</b><small id="syncSub">Local data</small></div></div>
+          <button id="globalSearchBtn" class="icon-btn" title="Search">⌕</button>
+          <button class="primary-btn" data-open="movement"><span>＋</span> Stock movement</button>
+        </div>
+      </header>
+
+      <section id="view-dashboard" class="view active">
+        <div class="attention-strip" id="attentionStrip"><div><span class="pulse"></span><b><span id="attentionCount">0</span> items need attention</b><small>Review low and out-of-stock products before the next order cycle.</small></div><button data-view-jump="inventory">Review inventory →</button></div>
+        <div class="kpi-grid">
+          <article class="kpi"><div class="kpi-icon teal" data-icon="boxes"></div><span>Total stock value</span><strong id="kpiValue">PKR 0</strong><small><i>Live</i> based on purchase cost</small></article>
+          <article class="kpi"><div class="kpi-icon blue" data-icon="box"></div><span>Active products</span><strong id="kpiProducts">0</strong><small id="kpiUnits">0 units on hand</small></article>
+          <article class="kpi"><div class="kpi-icon amber" data-icon="alert"></div><span>Low stock</span><strong id="kpiLow">0</strong><small>At or below reorder level</small></article>
+          <article class="kpi"><div class="kpi-icon violet" data-icon="truck"></div><span>Open purchase orders</span><strong id="kpiOrders">0</strong><small id="kpiIncoming">0 incoming units</small></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="panel chart-panel"><div class="panel-head"><div><span class="eyebrow">STOCK ACTIVITY</span><h3>Movement volume</h3></div><div class="segmented"><button class="active">7 days</button><button>30 days</button></div></div><div id="movementChart" class="movement-chart"></div><div class="chart-legend"><span><i class="in"></i>Stock in</span><span><i class="out"></i>Stock out</span></div></article>
+          <article class="panel"><div class="panel-head"><div><span class="eyebrow">PRIORITY</span><h3>Low-stock watchlist</h3></div><button class="text-btn" data-view-jump="inventory">View all</button></div><div id="lowStockList" class="stock-watch"></div></article>
+          <article class="panel recent-panel"><div class="panel-head"><div><span class="eyebrow">LATEST</span><h3>Recent movements</h3></div><button class="text-btn" data-view-jump="movements">Full history</button></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Type</th><th>Quantity</th><th>Reference</th><th>Time</th></tr></thead><tbody id="recentMovements"></tbody></table></div></article>
+          <article class="panel quick-panel"><div class="panel-head"><div><span class="eyebrow">QUICK ACTIONS</span><h3>Keep operations moving</h3></div></div><div class="quick-actions"><button data-open="product"><span>＋</span><b>Add product</b><small>Create a new SKU</small></button><button data-open="movement" data-type="in"><span>↓</span><b>Receive stock</b><small>Record incoming units</small></button><button data-open="purchase"><span>⌁</span><b>New purchase order</b><small>Order from a supplier</small></button><button id="quickExport"><span>⇩</span><b>Export inventory</b><small>Download CSV file</small></button></div></article>
+        </div>
+      </section>
+
+      <section id="view-inventory" class="view">
+        <div class="section-tools"><div class="searchbox"><span>⌕</span><input id="inventorySearch" placeholder="Search SKU, product or category…"></div><select id="categoryFilter"><option value="all">All categories</option></select><select id="stockFilter"><option value="all">All stock levels</option><option value="low">Low stock</option><option value="out">Out of stock</option><option value="healthy">Healthy</option></select><button class="ghost-btn" id="exportInventory">⇩ Export</button><button class="primary-btn" data-open="product">＋ Add product</button></div>
+        <article class="panel table-panel"><div class="table-caption"><div><h3>Product inventory</h3><p id="inventoryCount">0 products</p></div><div class="value-chip">Total value <b id="inventoryValue">PKR 0</b></div></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>In stock</th><th>Reorder at</th><th>Cost</th><th>Value</th><th>Status</th><th></th></tr></thead><tbody id="inventoryTable"></tbody></table></div><div id="inventoryEmpty" class="empty-state hidden"><span>□</span><h3>No products found</h3><p>Add your first product or change the active filters.</p><button class="primary-btn" data-open="product">＋ Add product</button></div></article>
+      </section>
+
+      <section id="view-movements" class="view">
+        <div class="section-tools"><div class="searchbox"><span>⌕</span><input id="movementSearch" placeholder="Search product or reference…"></div><select id="movementTypeFilter"><option value="all">All movement types</option><option value="in">Stock in</option><option value="out">Stock out</option><option value="adjustment">Adjustment</option></select><button class="primary-btn" data-open="movement">＋ New movement</button></div>
+        <article class="panel table-panel"><div class="table-caption"><div><h3>Stock movement ledger</h3><p>A permanent trail of every inventory change.</p></div></div><div class="table-wrap"><table><thead><tr><th>Date & time</th><th>Product</th><th>Type</th><th>Quantity</th><th>Before</th><th>After</th><th>Reference</th><th>Recorded by</th></tr></thead><tbody id="movementsTable"></tbody></table></div></article>
+      </section>
+
+      <section id="view-purchases" class="view">
+        <div class="section-tools"><div class="subtabs" id="poTabs"><button class="active" data-po="all">All orders</button><button data-po="draft">Draft</button><button data-po="ordered">Ordered</button><button data-po="received">Received</button></div><button class="primary-btn" data-open="purchase">＋ New purchase order</button></div>
+        <div id="purchaseCards" class="purchase-grid"></div>
+      </section>
+
+      <section id="view-suppliers" class="view">
+        <div class="section-tools"><div><h3>Supplier directory</h3><p>Manage purchasing contacts and lead times.</p></div><button class="primary-btn" data-open="supplier">＋ Add supplier</button></div><div id="supplierGrid" class="supplier-grid"></div>
+      </section>
+
+      <section id="view-reports" class="view">
+        <div class="report-hero"><div><span class="eyebrow">INVENTORY INTELLIGENCE</span><h2>Know where your money is.</h2><p>Live summaries generated from your product and movement data.</p></div><button class="primary-btn" id="downloadReport">⇩ Download inventory report</button></div>
+        <div class="report-grid"><article class="panel"><span class="eyebrow">VALUE BY CATEGORY</span><h3>Capital distribution</h3><div id="categoryBars" class="category-bars"></div></article><article class="panel"><span class="eyebrow">STOCK HEALTH</span><h3>Inventory status</h3><div class="donut-wrap"><div id="healthDonut" class="donut"><div><strong id="healthPct">0%</strong><small>healthy</small></div></div><div id="healthLegend" class="health-legend"></div></div></article><article class="panel report-wide"><span class="eyebrow">REPLENISHMENT</span><h3>Reorder recommendations</h3><div id="reorderRecommendations" class="recommendations"></div></article></div>
+      </section>
+
+      <section id="view-audit" class="view"><article class="panel table-panel"><div class="table-caption"><div><h3>Audit log</h3><p>Administrative actions and important system events.</p></div><button class="ghost-btn" id="clearAudit">Clear demo log</button></div><div id="auditTimeline" class="audit-timeline"></div></article></section>
+
+      <section id="view-settings" class="view">
+        <div class="settings-layout"><aside><button class="active">Business profile</button><button>Cloud connection</button><button>Preferences</button><button>Security</button></aside><div>
+          <article class="panel settings-card"><span class="eyebrow">BUSINESS PROFILE</span><h3>Company information</h3><div class="form-grid"><label>Business name<input id="businessName" value="AMCY Trader"></label><label>Base currency<select id="currencySetting"><option>PKR</option><option>USD</option><option>AED</option><option>EUR</option></select></label><label>Default location<input id="locationSetting" value="Main Warehouse"></label><label>Admin display name<input id="nameSetting" value="Admin User"></label></div><button class="primary-btn" id="saveProfile">Save changes</button></article>
+          <article class="panel settings-card firebase-card"><div class="firebase-heading"><div><span class="eyebrow">AMCY CLOUD</span><h3>Cloud connection</h3></div><span id="firebaseStatus" class="status-pill warning">Connecting</span></div><p>Your inventory workspace securely synchronizes products, suppliers, orders, and stock movements across authorized sessions.</p><div class="cloud-details"><div><span>Access</span><b>Administrator only</b></div><div><span>Workspace</span><b>AMCY Trader</b></div><div><span>Data service</span><b>Realtime synchronization</b></div><div><span>Recovery</span><b>Offline-safe local copy</b></div></div><p class="security-note">ⓘ Live records are restricted to the authorized AMCY Trader administrator account.</p></article>
+        </div></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="searchOverlay" class="search-overlay hidden"><div class="command-box"><div><span>⌕</span><input id="globalSearch" placeholder="Search products, suppliers, or orders…"><kbd>ESC</kbd></div><div id="searchResults" class="search-results"></div></div></div>
+
+  <dialog id="productDialog"><form method="dialog" id="productForm" class="modal-form"><div class="modal-head"><div><span class="eyebrow">INVENTORY</span><h2 id="productModalTitle">Add product</h2></div><button value="cancel" class="close-btn">×</button></div><input type="hidden" id="productId"><div class="form-grid"><label class="span-2">Product name<input id="productName" required placeholder="e.g. Premium Cotton Roll"></label><label>SKU<input id="productSku" required placeholder="AMCY-001"></label><label>Category<input id="productCategory" required placeholder="Textiles"></label><label>Opening stock<input id="productStock" type="number" min="0" value="0" required></label><label>Reorder level<input id="productReorder" type="number" min="0" value="10" required></label><label>Purchase cost<input id="productCost" type="number" min="0" step="0.01" required></label><label>Selling price<input id="productPrice" type="number" min="0" step="0.01" required></label><label class="span-2">Supplier<select id="productSupplier"></select></label></div><div class="modal-actions"><button value="cancel" class="ghost-btn">Cancel</button><button type="submit" class="primary-btn">Save product</button></div></form></dialog>
+
+  <dialog id="movementDialog"><form method="dialog" id="movementForm" class="modal-form"><div class="modal-head"><div><span class="eyebrow">STOCK LEDGER</span><h2>Record movement</h2></div><button value="cancel" class="close-btn">×</button></div><div class="movement-types"><label><input type="radio" name="movementType" value="in" checked><span>↓<b>Stock in</b><small>Receive units</small></span></label><label><input type="radio" name="movementType" value="out"><span>↑<b>Stock out</b><small>Issue or sell units</small></span></label><label><input type="radio" name="movementType" value="adjustment"><span>±<b>Adjustment</b><small>Set exact count</small></span></label></div><label>Product<select id="movementProduct" required></select></label><div id="currentStockHint" class="stock-hint">Current stock: —</div><div class="form-grid"><label>Quantity<input id="movementQty" type="number" min="1" required></label><label>Reference<input id="movementReference" placeholder="INV-1024 / PO-002"></label><label class="span-2">Reason / note<textarea id="movementNote" rows="3" placeholder="Add context for the audit trail"></textarea></label></div><div id="movementError" class="form-error"></div><div class="modal-actions"><button value="cancel" class="ghost-btn">Cancel</button><button type="submit" class="primary-btn">Record movement</button></div></form></dialog>
+
+  <dialog id="supplierDialog"><form method="dialog" id="supplierForm" class="modal-form"><div class="modal-head"><div><span class="eyebrow">PURCHASING</span><h2>Add supplier</h2></div><button value="cancel" class="close-btn">×</button></div><div class="form-grid"><label class="span-2">Company name<input id="supplierName" required></label><label>Contact person<input id="supplierContact" required></label><label>Phone<input id="supplierPhone" required></label><label>Email<input id="supplierEmail" type="email"></label><label>Lead time (days)<input id="supplierLead" type="number" min="0" value="3"></label><label>Payment terms<input id="supplierTerms" value="Cash on delivery"></label><label class="span-2">Address<textarea id="supplierAddress" rows="2"></textarea></label></div><div class="modal-actions"><button value="cancel" class="ghost-btn">Cancel</button><button type="submit" class="primary-btn">Add supplier</button></div></form></dialog>
+
+  <dialog id="purchaseDialog"><form method="dialog" id="purchaseForm" class="modal-form"><div class="modal-head"><div><span class="eyebrow">PURCHASING</span><h2>New purchase order</h2></div><button value="cancel" class="close-btn">×</button></div><div class="form-grid"><label>Supplier<select id="purchaseSupplier" required></select></label><label>Expected date<input id="purchaseDate" type="date" required></label><label class="span-2">Product<select id="purchaseProduct" required></select></label><label>Quantity<input id="purchaseQty" type="number" min="1" required></label><label>Unit cost<input id="purchaseCost" type="number" min="0" step="0.01" required></label><label class="span-2">Note<textarea id="purchaseNote" rows="2"></textarea></label></div><div class="modal-actions"><button value="cancel" class="ghost-btn">Cancel</button><button type="submit" class="primary-btn">Create order</button></div></form></dialog>
+
+  <div id="toastContainer" class="toast-container"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
