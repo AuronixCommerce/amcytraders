@@ -16,6 +16,8 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Reports and CSV inventory export
 - Responsive desktop and mobile business interface
 - Flat, restrained operations-system visual language without decorative gradients, glass effects, floating ornaments, neon colors, or motion-heavy hover treatments
+- Dedicated full-page product, stock movement, supplier, purchase-order, and invoice workflows with reliable Cancel and Back actions
+- Branded selection controls, inline validation, optional product metadata, and iOS-style activity indicators
 
 ## Development
 

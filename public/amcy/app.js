@@ -77,6 +77,41 @@ async function enforceTrustedSessionDeadline(){if(!currentUser||!trustedSessionE
 setInterval(enforceTrustedSessionDeadline,5*60*1000);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')enforceTrustedSessionDeadline()});
 
+const spinnerMarkup = () => `<span class="ios-spinner" aria-hidden="true">${Array.from({length:12},(_,i)=>`<i style="--i:${i}"></i>`).join('')}</span>`;
+function setButtonBusy(button,busy,label='Working'){
+  if(!button)return;
+  if(busy){button.dataset.originalHtml=button.innerHTML;button.disabled=true;button.innerHTML=`${spinnerMarkup()}<span>${label}</span>`;}
+  else{button.disabled=false;if(button.dataset.originalHtml){button.innerHTML=button.dataset.originalHtml;delete button.dataset.originalHtml;}}
+}
+function fieldError(id,message=''){
+  const input=$(`#${id}`);let error=$(`[data-error-for="${id}"]`);
+  if(input&&!error){error=document.createElement('small');error.className='field-error';error.dataset.errorFor=id;input.closest('label')?.append(error);}
+  if(input)input.setAttribute('aria-invalid',message?'true':'false');
+  if(error)error.textContent=message;
+  return !message;
+}
+function clearFormErrors(form){$$('.field-error',form).forEach(el=>el.textContent='');$$('[aria-invalid]',form).forEach(el=>el.setAttribute('aria-invalid','false'));}
+function focusInvalid(id){const el=$(`#${id}`),target=el?._customButton||el;target?.focus();target?.scrollIntoView({block:'center',behavior:'smooth'});}
+
+function enhanceSelect(select){
+  if(select.dataset.customized)return;
+  select.dataset.customized='true';select.classList.add('native-select');
+  const shell=document.createElement('div');shell.className='custom-select';
+  const button=document.createElement('button');button.type='button';button.className='custom-select-button';button.setAttribute('aria-haspopup','listbox');button.setAttribute('aria-expanded','false');
+  const menu=document.createElement('div');menu.className='custom-select-menu hidden';menu.setAttribute('role','listbox');
+  shell.append(button,menu);select.insertAdjacentElement('afterend',shell);
+  const render=()=>{
+    const selected=select.options[select.selectedIndex]||select.options[0];button.innerHTML=`<span>${esc(selected?.textContent||'Select')}</span><b aria-hidden="true">⌄</b>`;
+    menu.replaceChildren(...[...select.options].map(option=>{const item=document.createElement('button');item.type='button';item.className='custom-select-option';item.dataset.value=option.value;item.setAttribute('role','option');item.setAttribute('aria-selected',String(option.selected));item.innerHTML=`<span>${esc(option.textContent)}</span>${option.selected?'<b>Selected</b>':''}`;return item;}));
+  };
+  select._refreshCustom=render;select._customButton=button;render();
+  button.addEventListener('click',()=>{const opening=menu.classList.contains('hidden');$$('.custom-select-menu').forEach(x=>x.classList.add('hidden'));$$('.custom-select-button').forEach(x=>x.setAttribute('aria-expanded','false'));menu.classList.toggle('hidden',!opening);button.setAttribute('aria-expanded',String(opening));});
+  menu.addEventListener('click',event=>{const option=event.target.closest('[data-value]');if(!option)return;select.value=option.dataset.value;select.dispatchEvent(new Event('change',{bubbles:true}));render();menu.classList.add('hidden');button.setAttribute('aria-expanded','false');button.focus();});
+  select.addEventListener('change',render);
+}
+function refreshCustomSelects(){$$('select').forEach(select=>{enhanceSelect(select);select._refreshCustom?.();});}
+document.addEventListener('click',event=>{if(event.target.closest('.custom-select'))return;$$('.custom-select-menu').forEach(x=>x.classList.add('hidden'));$$('.custom-select-button').forEach(x=>x.setAttribute('aria-expanded','false'));});
+
 async function persist(){
   if(mode==='firebase' && firebase && currentUser?.uid===ADMIN_UID){
     try{await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);cloudOnline=true;return;}
@@ -145,9 +180,12 @@ function updateSync(){
 $('#loginForm').addEventListener('submit',async e=>{
   e.preventDefault();$('#loginError').textContent='';
   if(mode!=='firebase'){ $('#loginError').textContent='AMCY Cloud is unavailable right now. Check your connection and reload.'; return; }
-  const submit=$('#loginForm button[type="submit"]');submit.disabled=true;submit.firstElementChild.textContent='Signing in…';
+  const email=$('#loginEmail').value.trim(),password=$('#loginPassword').value;
+  if(!email){$('#loginError').textContent='Enter the administrator email address.';$('#loginEmail').focus();return}
+  if(!/^\S+@\S+\.\S+$/.test(email)){ $('#loginError').textContent='Enter a valid email address.';$('#loginEmail').focus();return }
+  if(!password){$('#loginError').textContent='Enter the administrator password.';$('#loginPassword').focus();return}
+  const submit=$('#loginForm button[type="submit"]');setButtonBusy(submit,true,'Signing in');
   try{
-    const email=$('#loginEmail').value.trim(),password=$('#loginPassword').value;
     await Promise.all([firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence),invoiceFirebase.setPersistence(invoiceFirebase.auth,invoiceFirebase.browserLocalPersistence)]);
     const credential=await firebase.signInWithEmailAndPassword(firebase.auth,email,password);
     if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';return;}
@@ -156,16 +194,16 @@ $('#loginForm').addEventListener('submit',async e=>{
     catch(invoiceError){console.error('Invoice vault sign-in failed',invoiceError);invoiceCloudOnline=false;setTimeout(()=>toast('Main workspace connected. Invoice vault needs the same admin login in its Firebase Authentication.','error'),600);}
   }
   catch(err){console.error(err);const messages={'auth/invalid-credential':'Email or password is incorrect.','auth/user-disabled':'This administrator account is disabled.','auth/too-many-requests':'Too many attempts. Please wait and try again.','auth/network-request-failed':'Network error. Check your connection and try again.'};$('#loginError').textContent=messages[err.code]||`Sign-in failed (${String(err.code||'unknown').replace('auth/','')}).`;}
-  finally{submit.disabled=false;submit.firstElementChild.textContent='Sign in securely';}
+  finally{setButtonBusy(submit,false);}
 });
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
 $('#logoutBtn').addEventListener('click',async()=>{clearTrustedSession();if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
-const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings'};
+const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings','product-editor':'Product details','movement-editor':'Record stock movement','supplier-editor':'Supplier details','purchase-editor':'New purchase order','invoice-detail':'Invoice details'};
 function go(view){
   $$('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));
   $$('#mainNav button').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
-  $('#pageTitle').textContent=titles[view];$('#sidebar').classList.remove('open');
+  $('#pageTitle').textContent=titles[view]||'AMCY Trader';$('#sidebar').classList.remove('open');
   window.scrollTo({top:0,behavior:'smooth'});
 }
 $('#mainNav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)go(b.dataset.view)});
@@ -174,7 +212,7 @@ $('#menuBtn').addEventListener('click',()=>$('#sidebar').classList.add('open'));
 $('#closeSidebar').addEventListener('click',()=>$('#sidebar').classList.remove('open'));
 
 function renderAll(){
-  renderKpis();renderDashboard();renderInventory();renderMovements();renderPOS();renderSales();renderPurchases();renderSuppliers();renderReports();renderAudit();populateSelects();renderProfile();updateSync();
+  renderKpis();renderDashboard();renderInventory();renderMovements();renderPOS();renderSales();renderPurchases();renderSuppliers();renderReports();renderAudit();populateSelects();renderProfile();refreshCustomSelects();updateSync();
 }
 function renderKpis(){
   const value=state.products.reduce((s,p)=>s+p.stock*p.cost,0), units=state.products.reduce((s,p)=>s+p.stock,0), low=state.products.filter(p=>p.stock<=p.reorder), open=state.purchases.filter(p=>p.status!=='received');
@@ -234,9 +272,9 @@ function receiptHtml(sale){
 }
 function printReceipt(sale,targetWindow){const w=targetWindow||window.open('','_blank','width=440,height=760');if(!w){toast('Allow pop-ups to print the receipt.','error');return}w.document.open();w.document.write(receiptHtml(sale));w.document.close();}
 function openInvoiceDetail(sale){
-  $('#invoiceDetailDialog').dataset.saleId=sale.id;
+  $('#view-invoice-detail').dataset.saleId=sale.id;
   $('#invoiceDetailBody').innerHTML=`<section class="invoice-detail-hero"><div><span class="eyebrow">${esc(sale.payment==='Credit'?'CREDIT INVOICE':'PAID INVOICE')}</span><h3>${esc(sale.id)}</h3><p>${formatTime(sale.createdAt)} · ${toList(sale.items).reduce((n,item)=>n+Number(item.qty||0),0)} units</p></div><div class="invoice-amount"><small>Grand total</small><strong>${money(sale.total)}</strong></div></section><section class="invoice-detail-grid"><div class="invoice-detail-card"><span>Customer</span><b>${esc(sale.customer||'Walk-in customer')}</b><small>${esc([sale.phone,sale.email].filter(Boolean).join(' · ')||'No contact details')}</small></div><div class="invoice-detail-card"><span>Payment</span><b>${esc(sale.payment)}</b><small>${sale.payment==='Cash'?`${money(sale.received||sale.total)} received · ${money(sale.change||0)} change`:'Payment recorded in full'}</small></div></section><section class="invoice-line-items">${toList(sale.items).map(item=>`<div class="invoice-line"><div><b>${esc(item.name)}</b><small>${esc(item.sku||'')}</small></div><span>${item.qty} × ${money(item.price)}</span><span><b>${money(item.qty*item.price)}</b></span></div>`).join('')}</section><section class="invoice-detail-totals"><div><span>Subtotal</span><b>${money(sale.subtotal)}</b></div><div><span>Discount</span><b>−${money(sale.discount||0)}</b></div><div class="grand"><span>Total</span><b>${money(sale.total)}</b></div></section>${sale.note?`<div class="invoice-note-card"><b>Invoice note:</b> ${esc(sale.note)}</div>`:''}`;
-  $('#invoiceDetailDialog').showModal();
+  go('invoice-detail');
 }
 let poFilter='all';
 function renderPurchases(){
@@ -283,7 +321,7 @@ $('#completeSale').addEventListener('click',async()=>{
   const totals=cartTotals(),payment=$('#salePayment').value,received=payment==='Cash'?Number($('#saleReceived').value||totals.total):totals.total;
   if(payment==='Cash'&&received<totals.total){if(printWindow)printWindow.close();$('#saleError').textContent=`Amount received is ${money(totals.total-received)} short.`;return;}
   const sale={id:`INV-${Date.now().toString().slice(-10)}`,customer:$('#saleCustomer').value.trim()||'Walk-in customer',phone:$('#salePhone').value.trim(),email:$('#saleEmail').value.trim(),payment,received,change:payment==='Cash'?Math.max(0,received-totals.total):0,note:$('#saleNote').value.trim(),items:cart.map(item=>{const p=product(item.productId);return{productId:p.id,name:p.name,sku:p.sku,price:p.price,qty:item.qty}}),subtotal:totals.subtotal,discount:totals.discount,total:totals.total,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User',invoiceArchiveStatus:'pending'};
-  const button=$('#completeSale');button.disabled=true;button.firstElementChild.textContent='Completing sale…';
+  const button=$('#completeSale');setButtonBusy(button,true,'Completing sale');
   try{
     const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);const result=await firebase.runTransaction(root,current=>{const live=normalizeState(current);for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId);if(!p||p.stock<item.qty)throw new Error(`${item.name} no longer has enough stock`);}for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId),before=p.stock;p.stock-=item.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'out',qty:item.qty,before,after:p.stock,reference:sale.id,note:`Customer sale — ${sale.customer}`,createdAt:sale.createdAt,user:sale.user});}live.sales.unshift(sale);live.audit.unshift({id:uid('a'),action:'Sale completed',detail:`${sale.id} for ${sale.customer} — ${money(sale.total)}`,createdAt:sale.createdAt,user:sale.user});return live;},{applyLocally:false});
     if(!result.committed)throw new Error('Sale could not be committed');
@@ -291,47 +329,64 @@ $('#completeSale').addEventListener('click',async()=>{
     catch(archiveError){console.error(archiveError);invoiceCloudOnline=false;toast('Sale saved. Invoice vault sync is pending—use Sync from invoice history.','error');}
     cart=[];$('#saleCustomer').value='';$('#salePhone').value='';$('#saleEmail').value='';$('#saleDiscount').value=0;$('#saleReceived').value='';$('#saleNote').value='';$('#salePayment').value='Cash';$('#amountReceivedLabel').classList.remove('hidden');renderCart();toast(`${sale.id} completed`);printReceipt(sale,printWindow);
   }catch(error){console.error(error);if(printWindow)printWindow.close();$('#saleError').textContent=error.message||'Sale could not be completed. Please retry.';}
-  finally{button.disabled=!cart.length||!cloudOnline;button.firstElementChild.textContent='Charge & print receipt';}
+  finally{setButtonBusy(button,false);button.disabled=!cart.length||!cloudOnline;}
 });
-$('#salesTable').addEventListener('click',async e=>{const print=e.target.closest('[data-print-sale]'),view=e.target.closest('[data-view-sale]'),sync=e.target.closest('[data-sync-sale]'),id=print?.dataset.printSale||view?.dataset.viewSale||sync?.dataset.syncSale;if(!id)return;const sale=state.sales.find(s=>s.id===id);if(!sale)return;if(print)printReceipt(sale);if(view)openInvoiceDetail(sale);if(sync){sync.disabled=true;sync.textContent='Syncing…';try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} synced to invoice vault`);}catch(error){console.error(error);toast('Invoice vault unavailable. Confirm the same admin login exists in the invoice Firebase project.','error');}finally{sync.disabled=false;sync.textContent='Sync';}}});
-$$('[data-close-invoice]').forEach(button=>button.addEventListener('click',()=>$('#invoiceDetailDialog').close()));
-$('#invoiceDetailPrint').addEventListener('click',()=>{const sale=state.sales.find(item=>item.id===$('#invoiceDetailDialog').dataset.saleId);if(sale)printReceipt(sale)});
+$('#salesTable').addEventListener('click',async e=>{const print=e.target.closest('[data-print-sale]'),view=e.target.closest('[data-view-sale]'),sync=e.target.closest('[data-sync-sale]'),id=print?.dataset.printSale||view?.dataset.viewSale||sync?.dataset.syncSale;if(!id)return;const sale=state.sales.find(s=>s.id===id);if(!sale)return;if(print)printReceipt(sale);if(view)openInvoiceDetail(sale);if(sync){setButtonBusy(sync,true,'Syncing');try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} synced to invoice vault`);}catch(error){console.error(error);toast('Invoice vault unavailable. Confirm the same admin login exists in the invoice project.','error');}finally{setButtonBusy(sync,false);}}});
+$('#invoiceDetailPrint').addEventListener('click',()=>{const sale=state.sales.find(item=>item.id===$('#view-invoice-detail').dataset.saleId);if(sale)printReceipt(sale)});
 $('#poTabs').addEventListener('click',e=>{const b=e.target.closest('[data-po]');if(!b)return;poFilter=b.dataset.po;$$('#poTabs button').forEach(x=>x.classList.toggle('active',x===b));renderPurchases()});
 
-function openDialog(name,trigger){
-  const d=$(`#${name}Dialog`);if(!d)return;
-  if(name==='product'){$('#productForm').reset();$('#productId').value='';$('#productModalTitle').textContent='Add product';$('#productReorder').value=10;$('#deleteProductBtn').classList.add('hidden')}
-  if(name==='movement'){$('#movementForm').reset();$('#movementError').textContent='';if(trigger?.dataset.type)$(`input[name="movementType"][value="${trigger.dataset.type}"]`).checked=true;updateStockHint()}
-  if(name==='purchase'){$('#purchaseForm').reset();$('#purchaseDate').value=new Date(Date.now()+7*86400000).toISOString().slice(0,10)}
-  if(name==='supplier')$('#supplierForm').reset(); d.showModal();
+function openWorkflow(name,trigger){
+  if(name==='product'){
+    $('#productForm').reset();clearFormErrors($('#productForm'));$('#productId').value='';$('#productModalTitle').textContent='Add product';$('#productDeleteZone').classList.add('hidden');$('#deleteProductConfirm').classList.add('hidden');go('product-editor');
+  }
+  if(name==='movement'){
+    $('#movementForm').reset();clearFormErrors($('#movementForm'));$('#movementError').textContent='';if(trigger?.dataset.type)$(`input[name="movementType"][value="${trigger.dataset.type}"]`).checked=true;updateStockHint();go('movement-editor');
+  }
+  if(name==='purchase'){
+    $('#purchaseForm').reset();clearFormErrors($('#purchaseForm'));$('#purchaseDate').value=new Date(Date.now()+7*86400000).toISOString().slice(0,10);go('purchase-editor');
+  }
+  if(name==='supplier'){$('#supplierForm').reset();clearFormErrors($('#supplierForm'));go('supplier-editor');}
+  refreshCustomSelects();
 }
-document.addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b)openDialog(b.dataset.open,b)});
-$$('dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
+document.addEventListener('click',e=>{const open=e.target.closest('[data-open]'),back=e.target.closest('[data-back]');if(open)openWorkflow(open.dataset.open,open);if(back){clearFormErrors(back.closest('form')||document);go(back.dataset.back);}});
 
 $('#productForm').addEventListener('submit',async e=>{
-  e.preventDefault();const id=$('#productId').value||uid('p'),existing=product(id);const item={id,name:$('#productName').value.trim(),sku:$('#productSku').value.trim().toUpperCase(),category:$('#productCategory').value.trim(),stock:Number($('#productStock').value),reorder:Number($('#productReorder').value),cost:Number($('#productCost').value),price:Number($('#productPrice').value),supplierId:$('#productSupplier').value};
-  if(state.products.some(p=>p.sku===item.sku&&p.id!==id)){toast('That SKU already exists.','error');return}
-  if(existing)Object.assign(existing,item);else state.products.unshift(item);await addAudit(existing?'Product updated':'Product added',`${item.name} (${item.sku}) ${existing?'was updated':'was created'}`);$('#productDialog').close();renderAll();toast(existing?'Product updated':'Product added to inventory');
+  e.preventDefault();clearFormErrors(e.currentTarget);const name=$('#productName').value.trim();
+  if(!name){fieldError('productName','Enter a product name to continue.');focusInvalid('productName');return}
+  const id=$('#productId').value||uid('p'),existing=product(id);let sku=$('#productSku').value.trim().toUpperCase();
+  if(!sku){const base=name.replace(/[^a-z0-9]/gi,'').slice(0,6).toUpperCase()||'ITEM';sku=`AMCY-${base}-${Date.now().toString().slice(-4)}`;}
+  const item={id,name,sku,category:$('#productCategory').value.trim()||'Uncategorized',stock:Math.max(0,Number($('#productStock').value)||0),reorder:Math.max(0,Number($('#productReorder').value)||0),cost:Math.max(0,Number($('#productCost').value)||0),price:Math.max(0,Number($('#productPrice').value)||0),supplierId:$('#productSupplier').value};
+  if(state.products.some(p=>p.sku===item.sku&&p.id!==id)){fieldError('productSku',`SKU ${item.sku} is already in use. Enter another SKU.`);focusInvalid('productSku');return}
+  const button=e.submitter;setButtonBusy(button,true,'Saving product');
+  try{if(existing)Object.assign(existing,item);else state.products.unshift(item);await addAudit(existing?'Product updated':'Product added',`${item.name} (${item.sku}) ${existing?'was updated':'was created'}`);renderAll();go('inventory');toast(existing?'Product updated':'Product added to inventory');}
+  catch(error){console.error(error);toast('Product could not be saved. Please retry.','error');}
+  finally{setButtonBusy(button,false);}
 });
-$('#inventoryTable').addEventListener('click',async e=>{const b=e.target.closest('[data-product-menu]');if(!b)return;const p=product(b.dataset.productMenu);if(!p)return;$('#productId').value=p.id;$('#productName').value=p.name;$('#productSku').value=p.sku;$('#productCategory').value=p.category;$('#productStock').value=p.stock;$('#productReorder').value=p.reorder;$('#productCost').value=p.cost;$('#productPrice').value=p.price;$('#productSupplier').value=p.supplierId||'';$('#productModalTitle').textContent='Edit product';$('#deleteProductBtn').classList.remove('hidden');$('#productDialog').showModal()});
-$('#deleteProductBtn').addEventListener('click',()=>{const p=product($('#productId').value);if(!p)return;$('#deleteProductDialog').dataset.productId=p.id;$('#deleteProductName').textContent=`${p.name} (${p.sku})`;$('#deleteProductError').textContent='';$('#productDialog').close();$('#deleteProductDialog').showModal()});
-$$('[data-close-product]').forEach(button=>button.addEventListener('click',()=>$('#productDialog').close()));
-$$('[data-close-delete]').forEach(button=>button.addEventListener('click',()=>$('#deleteProductDialog').close()));
-$('#confirmDeleteProduct').addEventListener('click',async()=>{const id=$('#deleteProductDialog').dataset.productId,p=product(id),button=$('#confirmDeleteProduct');if(!p)return;button.disabled=true;button.textContent='Deleting…';$('#deleteProductError').textContent='';try{const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),deletedAt=new Date().toISOString(),result=await firebase.runTransaction(root,current=>{const live=normalizeState(current),target=live.products.find(item=>item.id===id);if(!target)return;live.products=live.products.filter(item=>item.id!==id);live.audit.unshift({id:uid('a'),action:'Product deleted',detail:`${target.name} (${target.sku}) was permanently removed from active inventory`,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});return live;},{applyLocally:false});if(!result.committed)throw new Error('Product was already removed or could not be deleted');cart=cart.filter(item=>item.productId!==id);$('#deleteProductDialog').close();toast(`${p.name} deleted`);}catch(error){console.error(error);$('#deleteProductError').textContent=error.message||'Product could not be deleted.';}finally{button.disabled=false;button.textContent='Delete permanently';}});
+$('#inventoryTable').addEventListener('click',async e=>{const b=e.target.closest('[data-product-menu]');if(!b)return;const p=product(b.dataset.productMenu);if(!p)return;$('#productForm').reset();clearFormErrors($('#productForm'));$('#productId').value=p.id;$('#productName').value=p.name;$('#productSku').value=p.sku;$('#productCategory').value=p.category;$('#productStock').value=p.stock;$('#productReorder').value=p.reorder;$('#productCost').value=p.cost;$('#productPrice').value=p.price;$('#productSupplier').value=p.supplierId||'';$('#productModalTitle').textContent='Edit product';$('#productDeleteZone').classList.remove('hidden');$('#deleteProductConfirm').classList.add('hidden');refreshCustomSelects();go('product-editor')});
+$('#deleteProductBtn').addEventListener('click',()=>{const p=product($('#productId').value);if(!p)return;$('#deleteProductName').textContent=`${p.name} (${p.sku})`;$('#deleteProductError').textContent='';$('#deleteProductConfirm').classList.remove('hidden');$('#deleteProductConfirm').scrollIntoView({behavior:'smooth',block:'center'});});
+$('[data-cancel-delete]').addEventListener('click',()=>$('#deleteProductConfirm').classList.add('hidden'));
+$('#confirmDeleteProduct').addEventListener('click',async()=>{const id=$('#productId').value,p=product(id),button=$('#confirmDeleteProduct');if(!p)return;setButtonBusy(button,true,'Deleting');$('#deleteProductError').textContent='';try{const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),deletedAt=new Date().toISOString(),result=await firebase.runTransaction(root,current=>{const live=normalizeState(current),target=live.products.find(item=>item.id===id);if(!target)return;live.products=live.products.filter(item=>item.id!==id);live.audit.unshift({id:uid('a'),action:'Product deleted',detail:`${target.name} (${target.sku}) was permanently removed from active inventory`,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});return live;},{applyLocally:false});if(!result.committed)throw new Error('Product was already removed or could not be deleted');cart=cart.filter(item=>item.productId!==id);go('inventory');toast(`${p.name} deleted`);}catch(error){console.error(error);$('#deleteProductError').textContent=error.message||'Product could not be deleted.';}finally{setButtonBusy(button,false);}});
 function updateStockHint(){const p=product($('#movementProduct').value);$('#currentStockHint').textContent=p?`Current stock: ${p.stock} units`:'Current stock: —'}
 $('#movementProduct').addEventListener('change',updateStockHint);
 $('#movementForm').addEventListener('submit',async e=>{
-  e.preventDefault();const p=product($('#movementProduct').value),type=$('input[name="movementType"]:checked').value,qty=Number($('#movementQty').value);if(!p)return;const before=p.stock;let after=type==='in'?before+qty:type==='out'?before-qty:qty;if(after<0){$('#movementError').textContent=`Only ${before} units are available.`;return}p.stock=after;const m={id:uid('m'),productId:p.id,type,qty,before,after,reference:$('#movementReference').value.trim(),note:$('#movementNote').value.trim(),createdAt:new Date().toISOString(),user:state.profile.adminName};state.movements.unshift(m);await addAudit(type==='in'?'Stock received':type==='out'?'Stock issued':'Stock adjusted',`${p.name}: ${before} → ${after} units${m.reference?` (${m.reference})`:''}`);$('#movementDialog').close();renderAll();toast('Stock movement recorded');
+  e.preventDefault();clearFormErrors(e.currentTarget);$('#movementError').textContent='';const p=product($('#movementProduct').value),type=$('input[name="movementType"]:checked').value,qty=Number($('#movementQty').value);
+  if(!p){fieldError('movementProduct','Choose a product.');focusInvalid('movementProduct');return}
+  if(!Number.isFinite(qty)||qty<1){fieldError('movementQty','Enter a quantity of at least 1.');focusInvalid('movementQty');return}
+  const before=p.stock,after=type==='in'?before+qty:type==='out'?before-qty:qty;if(after<0){$('#movementError').textContent=`Only ${before} units are available.`;focusInvalid('movementQty');return}
+  const button=e.submitter;setButtonBusy(button,true,'Recording');
+  try{p.stock=after;const m={id:uid('m'),productId:p.id,type,qty,before,after,reference:$('#movementReference').value.trim(),note:$('#movementNote').value.trim(),createdAt:new Date().toISOString(),user:state.profile.adminName};state.movements.unshift(m);await addAudit(type==='in'?'Stock received':type==='out'?'Stock issued':'Stock adjusted',`${p.name}: ${before} → ${after} units${m.reference?` (${m.reference})`:''}`);renderAll();go('movements');toast('Stock movement recorded');}
+  catch(error){console.error(error);$('#movementError').textContent='Movement could not be saved. Please retry.';}
+  finally{setButtonBusy(button,false);}
 });
-$('#supplierForm').addEventListener('submit',async e=>{e.preventDefault();const s={id:uid('s'),name:$('#supplierName').value.trim(),contact:$('#supplierContact').value.trim(),phone:$('#supplierPhone').value.trim(),email:$('#supplierEmail').value.trim(),lead:Number($('#supplierLead').value),terms:$('#supplierTerms').value.trim(),address:$('#supplierAddress').value.trim()};state.suppliers.push(s);await addAudit('Supplier added',`${s.name} was added to the supplier directory`);$('#supplierDialog').close();renderAll();toast('Supplier added')});
-$('#purchaseForm').addEventListener('submit',async e=>{e.preventDefault();const maxNo=Math.max(1000,...state.purchases.map(x=>Number(x.id.replace(/\D/g,''))||0));const po={id:`PO-${maxNo+1}`,supplierId:$('#purchaseSupplier').value,productId:$('#purchaseProduct').value,qty:Number($('#purchaseQty').value),cost:Number($('#purchaseCost').value),status:'draft',expected:$('#purchaseDate').value,note:$('#purchaseNote').value.trim()};state.purchases.unshift(po);await addAudit('Purchase order created',`${po.id} created for ${supplier(po.supplierId)?.name}`);$('#purchaseDialog').close();renderAll();toast(`${po.id} created`)});
-$('#purchaseCards').addEventListener('click',async e=>{const b=e.target.closest('[data-receive-po]');if(!b)return;const po=state.purchases.find(x=>x.id===b.dataset.receivePo);if(po.status==='draft'){po.status='ordered';await addAudit('Purchase order placed',`${po.id} marked as ordered`);toast('Order marked as placed')}else{const p=product(po.productId),before=p.stock;p.stock+=po.qty;po.status='received';state.movements.unshift({id:uid('m'),productId:p.id,type:'in',qty:po.qty,before,after:p.stock,reference:po.id,note:'Purchase order received',createdAt:new Date().toISOString(),user:state.profile.adminName});await addAudit('Purchase order received',`${po.id}: ${po.qty} units added to ${p.name}`);toast('Order received and stock updated')}renderAll()});
+$('#supplierForm').addEventListener('submit',async e=>{e.preventDefault();clearFormErrors(e.currentTarget);const name=$('#supplierName').value.trim(),email=$('#supplierEmail').value.trim();if(!name){fieldError('supplierName','Enter the supplier company name.');focusInvalid('supplierName');return}if(email&&!/^\S+@\S+\.\S+$/.test(email)){fieldError('supplierEmail','Enter a valid email address or leave it empty.');focusInvalid('supplierEmail');return}const s={id:uid('s'),name,contact:$('#supplierContact').value.trim(),phone:$('#supplierPhone').value.trim(),email,lead:Math.max(0,Number($('#supplierLead').value)||0),terms:$('#supplierTerms').value.trim()||'Not specified',address:$('#supplierAddress').value.trim()};const button=e.submitter;setButtonBusy(button,true,'Adding supplier');try{state.suppliers.push(s);await addAudit('Supplier added',`${s.name} was added to the supplier directory`);renderAll();go('suppliers');toast('Supplier added');}catch(error){console.error(error);toast('Supplier could not be saved. Please retry.','error');}finally{setButtonBusy(button,false);}});
+$('#purchaseForm').addEventListener('submit',async e=>{e.preventDefault();clearFormErrors(e.currentTarget);const supplierId=$('#purchaseSupplier').value,productId=$('#purchaseProduct').value,qty=Number($('#purchaseQty').value);if(!supplierId){fieldError('purchaseSupplier','Choose a supplier.');focusInvalid('purchaseSupplier');return}if(!productId){fieldError('purchaseProduct','Choose a product.');focusInvalid('purchaseProduct');return}if(!Number.isFinite(qty)||qty<1){fieldError('purchaseQty','Enter a quantity of at least 1.');focusInvalid('purchaseQty');return}const maxNo=Math.max(1000,...state.purchases.map(x=>Number(x.id.replace(/\D/g,''))||0));const po={id:`PO-${maxNo+1}`,supplierId,productId,qty,cost:Math.max(0,Number($('#purchaseCost').value)||0),status:'draft',expected:$('#purchaseDate').value||new Date().toISOString().slice(0,10),note:$('#purchaseNote').value.trim()};const button=e.submitter;setButtonBusy(button,true,'Creating order');try{state.purchases.unshift(po);await addAudit('Purchase order created',`${po.id} created for ${supplier(po.supplierId)?.name}`);renderAll();go('purchases');toast(`${po.id} created`);}catch(error){console.error(error);toast('Purchase order could not be created. Please retry.','error');}finally{setButtonBusy(button,false);}});
+$('#purchaseCards').addEventListener('click',async e=>{const b=e.target.closest('[data-receive-po]');if(!b)return;const po=state.purchases.find(x=>x.id===b.dataset.receivePo);setButtonBusy(b,true,po.status==='draft'?'Updating':'Receiving');try{if(po.status==='draft'){po.status='ordered';await addAudit('Purchase order placed',`${po.id} marked as ordered`);toast('Order marked as placed')}else{const p=product(po.productId),before=p.stock;p.stock+=po.qty;po.status='received';state.movements.unshift({id:uid('m'),productId:p.id,type:'in',qty:po.qty,before,after:p.stock,reference:po.id,note:'Purchase order received',createdAt:new Date().toISOString(),user:state.profile.adminName});await addAudit('Purchase order received',`${po.id}: ${po.qty} units added to ${p.name}`);toast('Order received and stock updated')}renderAll();}catch(error){console.error(error);toast('Purchase order could not be updated.','error');}finally{setButtonBusy(b,false);}});
 
 function csvExport(){
   const rows=[['Product','SKU','Category','Stock','Reorder Level','Purchase Cost','Selling Price','Stock Value','Supplier'],...state.products.map(p=>[p.name,p.sku,p.category,p.stock,p.reorder,p.cost,p.price,p.stock*p.cost,supplier(p.supplierId)?.name||''])];const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`AMCY-Inventory-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Inventory report downloaded');
 }
 ['exportInventory','quickExport','downloadReport'].forEach(id=>$('#'+id).addEventListener('click',csvExport));
-$('#saveProfile').addEventListener('click',async()=>{state.profile={...state.profile,businessName:$('#businessName').value.trim(),currency:$('#currencySetting').value,location:$('#locationSetting').value.trim(),adminName:$('#nameSetting').value.trim(),dataVersion:2};await addAudit('Business profile updated','Company settings were changed');renderAll();toast('Business profile saved')});
+$('#saveProfile').addEventListener('click',async event=>{const button=event.currentTarget;setButtonBusy(button,true,'Saving');try{state.profile={...state.profile,businessName:$('#businessName').value.trim(),currency:$('#currencySetting').value,location:$('#locationSetting').value.trim(),adminName:$('#nameSetting').value.trim(),dataVersion:2};await addAudit('Business profile updated','Company settings were changed');renderAll();toast('Business profile saved');}catch(error){console.error(error);toast('Business profile could not be saved.','error');}finally{setButtonBusy(button,false);}});
 
 $('#globalSearchBtn').addEventListener('click',()=>{$('#searchOverlay').classList.remove('hidden');$('#globalSearch').focus();renderSearch('')});
 $('#searchOverlay').addEventListener('click',e=>{if(e.target===$('#searchOverlay'))$('#searchOverlay').classList.add('hidden')});
