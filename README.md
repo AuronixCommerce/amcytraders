@@ -9,6 +9,9 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Premium customer checkout with product search, quantities, discount, payment type, cash received, and change due
 - Transaction-safe stock deduction when a sale is completed
 - Print-ready branded receipts with customer details and invoice notes
+- Dedicated authenticated invoice vault in the `amcy-traders-invoices` Firebase project
+- Searchable invoice history, full invoice detail view, archive status, retry sync, and reprinting
+- Transaction-safe permanent product deletion with preserved historical invoices and stock movements
 - Reports and CSV inventory export
 - Responsive desktop and mobile business interface
 
@@ -33,6 +36,12 @@ pnpm build
 2. Create the administrator account and confirm its UID is `sAYmgRLwq4g1MIYQPRrT5CeiqJB3`.
 3. Publish `firebase-realtime-database.rules.json` in Firebase Console → Realtime Database → Rules.
 4. Open the app and sign in with that administrator's email and password.
+
+## Invoice vault Firebase
+
+The separate `amcy-traders-invoices` project stores invoice records only. Enable Email/Password Authentication there, create the same administrator login credentials, and publish `firebase-invoices-realtime-database.rules.json` in that project's Realtime Database rules. Its Firebase UID may differ from the main project because invoice records are securely namespaced under the authenticated invoice-project UID.
+
+Vercel deployment is explicitly configured as a Next.js project through `vercel.json`.
 
 All live business data is stored under:
 

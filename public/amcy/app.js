@@ -10,6 +10,15 @@ const DEFAULT_FIREBASE_CONFIG = {
   messagingSenderId: '70776800554',
   appId: '1:70776800554:web:7750826c31f81830410a53'
 };
+const INVOICE_FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyBS_prlnawp0sQsXp-nAenkd0-Pd1Vj93o',
+  authDomain: 'amcy-traders-invoices.firebaseapp.com',
+  databaseURL: 'https://amcy-traders-invoices-default-rtdb.firebaseio.com',
+  projectId: 'amcy-traders-invoices',
+  storageBucket: 'amcy-traders-invoices.firebasestorage.app',
+  messagingSenderId: '970228135991',
+  appId: '1:970228135991:web:eede9f42c5c8398a9de7b2'
+};
 
 const icons = {
   grid:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
@@ -41,8 +50,11 @@ const isOriginalMockData = raw => {const products=toList(raw?.products),demoSkus
 let state = blankState();
 let mode = 'firebase';
 let firebase = null;
+let invoiceFirebase = null;
 let currentUser = null;
+let invoiceUser = null;
 let cloudOnline = false;
+let invoiceCloudOnline = false;
 let syncWarningShown = false;
 let stopRealtime = null;
 let cart = [];
@@ -73,6 +85,9 @@ async function bootFirebase(config){
     const app=appMod.initializeApp(config,`amcy-${Date.now()}`);
     const auth=authMod.getAuth(app), db=dbMod.getDatabase(app);
     firebase={...authMod,...dbMod,auth,db}; mode='firebase';
+    const invoiceApp=appMod.initializeApp(INVOICE_FIREBASE_CONFIG,'amcy-invoice-vault');
+    const invoiceAuth=authMod.getAuth(invoiceApp),invoiceDb=dbMod.getDatabase(invoiceApp);
+    invoiceFirebase={...authMod,...dbMod,auth:invoiceAuth,db:invoiceDb};
     return true;
   }catch(e){ console.error(e); mode='offline'; cloudOnline=false; return false; }
 }
@@ -81,6 +96,7 @@ async function init(){
   $('#dateLine').textContent=new Intl.DateTimeFormat('en-PK',{weekday:'long',day:'numeric',month:'long'}).format(today);
   const ok=await bootFirebase(DEFAULT_FIREBASE_CONFIG);
   if(ok){
+    invoiceFirebase.onAuthStateChanged(invoiceFirebase.auth,user=>{invoiceUser=user||null;invoiceCloudOnline=!!user;if($('#salesTable'))renderSales();});
     firebase.onAuthStateChanged(firebase.auth,async user=>{
       if(user?.uid===ADMIN_UID){currentUser=user;try{await loadFirebaseData();showApp();}catch{showAuth();$('#loginError').textContent='Signed in, but live data access was denied. Publish the database rules and reload.';}}
       else if(user){currentUser=null;await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}
@@ -117,12 +133,19 @@ $('#loginForm').addEventListener('submit',async e=>{
   e.preventDefault();$('#loginError').textContent='';
   if(mode!=='firebase'){ $('#loginError').textContent='AMCY Cloud is unavailable right now. Check your connection and reload.'; return; }
   const submit=$('#loginForm button[type="submit"]');submit.disabled=true;submit.firstElementChild.textContent='Signing in…';
-  try{await firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence);const credential=await firebase.signInWithEmailAndPassword(firebase.auth,$('#loginEmail').value.trim(),$('#loginPassword').value);if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}}
+  try{
+    const email=$('#loginEmail').value.trim(),password=$('#loginPassword').value;
+    await Promise.all([firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence),invoiceFirebase.setPersistence(invoiceFirebase.auth,invoiceFirebase.browserLocalPersistence)]);
+    const credential=await firebase.signInWithEmailAndPassword(firebase.auth,email,password);
+    if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';return;}
+    try{await invoiceFirebase.signInWithEmailAndPassword(invoiceFirebase.auth,email,password);invoiceCloudOnline=true;}
+    catch(invoiceError){console.error('Invoice vault sign-in failed',invoiceError);invoiceCloudOnline=false;setTimeout(()=>toast('Main workspace connected. Invoice vault needs the same admin login in its Firebase Authentication.','error'),600);}
+  }
   catch(err){console.error(err);const messages={'auth/invalid-credential':'Email or password is incorrect.','auth/user-disabled':'This administrator account is disabled.','auth/too-many-requests':'Too many attempts. Please wait and try again.','auth/network-request-failed':'Network error. Check your connection and try again.'};$('#loginError').textContent=messages[err.code]||`Sign-in failed (${String(err.code||'unknown').replace('auth/','')}).`;}
   finally{submit.disabled=false;submit.firstElementChild.textContent='Sign in securely';}
 });
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
-$('#logoutBtn').addEventListener('click',async()=>{if(stopRealtime){stopRealtime();stopRealtime=null;}if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
+$('#logoutBtn').addEventListener('click',async()=>{if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
 const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings'};
 function go(view){
@@ -173,13 +196,34 @@ function renderCart(){
   $('#cartItems').innerHTML=cart.length?cart.map(item=>{const p=product(item.productId);return `<div class="cart-row"><div><b>${esc(p.name)}</b><small>${money(p.price)} each · ${money(p.price*item.qty)}</small></div><div class="qty-control"><button data-cart-change="-1" data-cart-id="${p.id}">−</button><span>${item.qty}</span><button data-cart-change="1" data-cart-id="${p.id}" ${item.qty>=p.stock?'disabled':''}>＋</button></div><button class="cart-remove" data-cart-remove="${p.id}" title="Remove">×</button></div>`}).join(''):'<div class="cart-empty">Select a product to begin this invoice.</div>';
   const t=cartTotals(),received=Number($('#saleReceived')?.value||t.total),change=$('#salePayment')?.value==='Cash'?Math.max(0,received-t.total):0;$('#cartUnits').textContent=t.units;$('#cartSubtotal').textContent=money(t.subtotal);$('#cartTotal').textContent=money(t.total);$('#saleChange').textContent=money(change);$('#completeSale').disabled=!cart.length||!cloudOnline;
 }
+function invoiceArchiveRecord(sale){
+  return {schemaVersion:1,invoice:{number:sale.id,status:sale.payment==='Credit'?'credit':'paid',issuedAt:sale.createdAt,archivedAt:new Date().toISOString()},business:{name:state.profile.businessName||'AMCY Trader',location:state.profile.location||'',currency:state.profile.currency||'PKR'},customer:{name:sale.customer||'Walk-in customer',phone:sale.phone||'',email:sale.email||''},payment:{method:sale.payment,received:Number(sale.received||sale.total),change:Number(sale.change||0)},totals:{subtotal:Number(sale.subtotal||0),discount:Number(sale.discount||0),grandTotal:Number(sale.total||0),unitCount:toList(sale.items).reduce((n,item)=>n+Number(item.qty||0),0)},items:toList(sale.items).map((item,index)=>({line:index+1,productId:item.productId||'',sku:item.sku||'',name:item.name,quantity:Number(item.qty),unitPrice:Number(item.price),lineTotal:Number(item.qty)*Number(item.price)})),note:sale.note||'',audit:{createdByName:sale.user||'Admin User',createdByEmail:currentUser?.email||'',source:'AMCY Trader POS',mainDatabaseUid:currentUser?.uid||ADMIN_UID}};
+}
+async function archiveInvoice(sale){
+  if(!invoiceFirebase||!invoiceUser)throw new Error('Invoice vault is not authenticated');
+  const key=String(sale.id).replace(/[.#$\[\]/]/g,'_'),record=invoiceArchiveRecord(sale),root=`invoiceVault/${invoiceUser.uid}`;
+  await invoiceFirebase.update(invoiceFirebase.ref(invoiceFirebase.db),{[`${root}/records/${key}`]:record,[`${root}/index/${key}`]:{number:sale.id,customer:sale.customer||'Walk-in customer',total:Number(sale.total||0),payment:sale.payment,issuedAt:sale.createdAt,archivedAt:record.invoice.archivedAt}});
+  invoiceCloudOnline=true;return record.invoice.archivedAt;
+}
+async function markInvoiceArchive(invoiceId,status,archivedAt=''){
+  const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);
+  await firebase.runTransaction(root,current=>{const live=normalizeState(current),sale=live.sales.find(item=>item.id===invoiceId);if(sale){sale.invoiceArchiveStatus=status;if(archivedAt)sale.invoiceArchivedAt=archivedAt;}return live;},{applyLocally:false});
+}
 function renderSales(){
-  $('#salesTable').innerHTML=[...state.sales].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(s=>`<tr><td><strong>${esc(s.id)}</strong></td><td>${esc(s.customer||'Walk-in customer')}<br><small>${esc(s.phone||'')}</small></td><td>${toList(s.items).reduce((n,i)=>n+i.qty,0)} units</td><td>${esc(s.payment)}</td><td><strong>${money(s.total)}</strong></td><td>${formatTime(s.createdAt)}</td><td><button class="receipt-btn" data-print-sale="${s.id}">Print</button></td></tr>`).join('')||'<tr><td colspan="7">No sales recorded yet.</td></tr>';
+  const q=($('#salesSearch')?.value||'').toLowerCase(),payment=$('#salesPaymentFilter')?.value||'all';
+  const sales=[...state.sales].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).filter(s=>{const haystack=[s.id,s.customer,s.phone,s.email,...toList(s.items).flatMap(i=>[i.name,i.sku])].join(' ').toLowerCase();return haystack.includes(q)&&(payment==='all'||s.payment===payment)});
+  $('#salesCount').textContent=sales.length;$('#salesRevenue').textContent=money(sales.reduce((sum,s)=>sum+Number(s.total||0),0));
+  $('#salesTable').innerHTML=sales.map(s=>{const synced=s.invoiceArchiveStatus==='synced',archiveLabel=synced?'Invoice vault synced':invoiceCloudOnline?'Archive pending':'Vault offline';return `<tr><td><strong>${esc(s.id)}</strong><span class="sync-mark ${synced?'':'pending'}"><i></i>${archiveLabel}</span></td><td>${esc(s.customer||'Walk-in customer')}<br><small>${esc(s.phone||s.email||'')}</small></td><td>${toList(s.items).reduce((n,i)=>n+i.qty,0)} units</td><td>${esc(s.payment)}</td><td><strong>${money(s.total)}</strong></td><td>${formatTime(s.createdAt)}</td><td><div class="invoice-actions"><button class="receipt-btn view" data-view-sale="${s.id}">View</button><button class="receipt-btn" data-print-sale="${s.id}">Print</button>${synced?'':`<button class="receipt-btn" data-sync-sale="${s.id}">Sync</button>`}</div></td></tr>`}).join('')||'<tr><td colspan="7">No invoices match these filters.</td></tr>';
 }
 function receiptHtml(sale){
   const business=esc(state.profile.businessName||'AMCY Trader'),location=esc(state.profile.location||'');return `<!doctype html><html><head><title>${esc(sale.id)}</title><style>*{box-sizing:border-box}body{margin:0;padding:28px;background:#f3f5f4;color:#101613;font:13px Arial,sans-serif}.receipt{max-width:410px;margin:auto;background:#fff;border:1px solid #dfe6e2;border-radius:18px;overflow:hidden;box-shadow:0 20px 60px #12251d18}.head{padding:25px 24px 21px;background:#091411;color:#fff}.brand{display:flex;align-items:center;gap:11px}.mark{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:#65e6b4;color:#07110f;font-size:18px;font-weight:900}.brand h1{font-size:18px;margin:0;letter-spacing:.07em}.brand small{display:block;margin-top:3px;color:#8fa69d;font-size:10px;letter-spacing:.04em}.head-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:24px}.head-row span{display:block;color:#8fa69d;font-size:9px;text-transform:uppercase;letter-spacing:.1em}.head-row b{display:block;margin-top:4px;font-size:14px}.paid{padding:6px 9px;border:1px solid #65e6b455;border-radius:20px;color:#65e6b4;font-size:9px;font-weight:800;letter-spacing:.08em}.body{padding:20px 24px}.customer{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-bottom:16px;border-bottom:1px solid #e5ebe8}.label{display:block;color:#718079;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.value{display:block;margin-top:4px;font-size:12px;font-weight:700}.items{width:100%;border-collapse:collapse;margin-top:14px}.items th{text-align:left;padding:7px 0;color:#718079;font-size:9px;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid #e5ebe8}.items th:nth-child(n+2),.items td:nth-child(n+2){text-align:right}.items td{padding:11px 0;border-bottom:1px solid #eef2f0;vertical-align:top}.items td:first-child{font-weight:700}.items small{display:block;margin-top:3px;color:#7d8c85;font-size:9px}.summary{margin:13px 0 0 auto;width:68%}.summary div{display:flex;justify-content:space-between;padding:4px 0;color:#64736c}.summary b{color:#111}.summary .grand{margin-top:7px;padding-top:10px;border-top:2px solid #13251e;color:#111;font-size:16px;font-weight:800}.payment{margin-top:18px;padding:12px;border-radius:10px;background:#f3f7f5;display:grid;grid-template-columns:1fr 1fr;gap:10px}.note{margin-top:14px;padding:10px 12px;border-left:3px solid #65e6b4;background:#f7faf8;color:#586861;font-size:10px}.foot{text-align:center;padding:17px 24px 22px;border-top:1px dashed #cbd5d0}.foot b{font-size:12px}.foot p{margin:6px 0 0;color:#74827c;font-size:9px}.cashier{margin-top:10px;color:#a0aaa5;font-size:8px}.no-print{margin:14px auto 0;display:block;border:0;border-radius:9px;background:#65e6b4;padding:10px 18px;font-weight:800;cursor:pointer}@media print{body{padding:0;background:#fff}.receipt{max-width:none;border:0;border-radius:0;box-shadow:none}.no-print{display:none}} </style></head><body><div class="receipt"><header class="head"><div class="brand"><div class="mark">A</div><div><h1>${business}</h1><small>${location}</small></div></div><div class="head-row"><div><span>Invoice number</span><b>${esc(sale.id)}</b></div><div class="paid">${sale.payment==='Credit'?'CREDIT':'PAID'}</div></div></header><main class="body"><section class="customer"><div><span class="label">Billed to</span><span class="value">${esc(sale.customer||'Walk-in customer')}</span>${sale.phone?`<small>${esc(sale.phone)}</small>`:''}</div><div><span class="label">Date & time</span><span class="value">${formatTime(sale.createdAt)}</span>${sale.email?`<small>${esc(sale.email)}</small>`:''}</div></section><table class="items"><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th></tr></thead><tbody>${toList(sale.items).map(i=>`<tr><td>${esc(i.name)}<small>${esc(i.sku||'')}</small></td><td>${i.qty}</td><td>${money(i.price)}</td><td><b>${money(i.qty*i.price)}</b></td></tr>`).join('')}</tbody></table><section class="summary"><div><span>Subtotal</span><b>${money(sale.subtotal)}</b></div>${sale.discount?`<div><span>Discount</span><b>−${money(sale.discount)}</b></div>`:''}<div class="grand"><span>Total</span><b>${money(sale.total)}</b></div></section><section class="payment"><div><span class="label">Payment method</span><span class="value">${esc(sale.payment)}</span></div><div><span class="label">${sale.payment==='Cash'?'Change returned':'Amount settled'}</span><span class="value">${money(sale.payment==='Cash'?(sale.change||0):sale.total)}</span></div></section>${sale.note?`<div class="note"><b>Note:</b> ${esc(sale.note)}</div>`:''}</main><footer class="foot"><b>Thank you for choosing ${business}</b><p>Please keep this receipt for your records.</p><div class="cashier">Served by ${esc(sale.user||'Admin')} · ${esc(sale.id)}</div></footer></div><button class="no-print" onclick="window.print()">Print receipt</button><script>window.onload=()=>{window.print()}<\/script></body></html>`;
 }
 function printReceipt(sale,targetWindow){const w=targetWindow||window.open('','_blank','width=440,height=760');if(!w){toast('Allow pop-ups to print the receipt.','error');return}w.document.open();w.document.write(receiptHtml(sale));w.document.close();}
+function openInvoiceDetail(sale){
+  $('#invoiceDetailDialog').dataset.saleId=sale.id;
+  $('#invoiceDetailBody').innerHTML=`<section class="invoice-detail-hero"><div><span class="eyebrow">${esc(sale.payment==='Credit'?'CREDIT INVOICE':'PAID INVOICE')}</span><h3>${esc(sale.id)}</h3><p>${formatTime(sale.createdAt)} · ${toList(sale.items).reduce((n,item)=>n+Number(item.qty||0),0)} units</p></div><div class="invoice-amount"><small>Grand total</small><strong>${money(sale.total)}</strong></div></section><section class="invoice-detail-grid"><div class="invoice-detail-card"><span>Customer</span><b>${esc(sale.customer||'Walk-in customer')}</b><small>${esc([sale.phone,sale.email].filter(Boolean).join(' · ')||'No contact details')}</small></div><div class="invoice-detail-card"><span>Payment</span><b>${esc(sale.payment)}</b><small>${sale.payment==='Cash'?`${money(sale.received||sale.total)} received · ${money(sale.change||0)} change`:'Payment recorded in full'}</small></div></section><section class="invoice-line-items">${toList(sale.items).map(item=>`<div class="invoice-line"><div><b>${esc(item.name)}</b><small>${esc(item.sku||'')}</small></div><span>${item.qty} × ${money(item.price)}</span><span><b>${money(item.qty*item.price)}</b></span></div>`).join('')}</section><section class="invoice-detail-totals"><div><span>Subtotal</span><b>${money(sale.subtotal)}</b></div><div><span>Discount</span><b>−${money(sale.discount||0)}</b></div><div class="grand"><span>Total</span><b>${money(sale.total)}</b></div></section>${sale.note?`<div class="invoice-note-card"><b>Invoice note:</b> ${esc(sale.note)}</div>`:''}`;
+  $('#invoiceDetailDialog').showModal();
+}
 let poFilter='all';
 function renderPurchases(){
   const orders=[...state.purchases].filter(p=>poFilter==='all'||p.status===poFilter).sort((a,b)=>b.id.localeCompare(a.id));
@@ -207,6 +251,8 @@ function renderProfile(){
 ['inventorySearch','categoryFilter','stockFilter'].forEach(id=>$('#'+id).addEventListener(id.includes('Search')?'input':'change',renderInventory));
 ['movementSearch','movementTypeFilter'].forEach(id=>$('#'+id).addEventListener(id.includes('Search')?'input':'change',renderMovements));
 $('#posSearch').addEventListener('input',renderPOS);
+$('#salesSearch').addEventListener('input',renderSales);
+$('#salesPaymentFilter').addEventListener('change',renderSales);
 $('#saleDiscount').addEventListener('input',renderCart);
 $('#saleReceived').addEventListener('input',renderCart);
 $('#salePayment').addEventListener('change',()=>{
@@ -222,20 +268,25 @@ $('#completeSale').addEventListener('click',async()=>{
   $('#saleError').textContent='';if(!cart.length)return;const printWindow=window.open('','_blank','width=440,height=760');if(printWindow)printWindow.document.write('<p style="font-family:Arial;padding:24px">Preparing receipt…</p>');
   const totals=cartTotals(),payment=$('#salePayment').value,received=payment==='Cash'?Number($('#saleReceived').value||totals.total):totals.total;
   if(payment==='Cash'&&received<totals.total){if(printWindow)printWindow.close();$('#saleError').textContent=`Amount received is ${money(totals.total-received)} short.`;return;}
-  const sale={id:`INV-${Date.now().toString().slice(-10)}`,customer:$('#saleCustomer').value.trim()||'Walk-in customer',phone:$('#salePhone').value.trim(),email:$('#saleEmail').value.trim(),payment,received,change:payment==='Cash'?Math.max(0,received-totals.total):0,note:$('#saleNote').value.trim(),items:cart.map(item=>{const p=product(item.productId);return{productId:p.id,name:p.name,sku:p.sku,price:p.price,qty:item.qty}}),subtotal:totals.subtotal,discount:totals.discount,total:totals.total,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User'};
+  const sale={id:`INV-${Date.now().toString().slice(-10)}`,customer:$('#saleCustomer').value.trim()||'Walk-in customer',phone:$('#salePhone').value.trim(),email:$('#saleEmail').value.trim(),payment,received,change:payment==='Cash'?Math.max(0,received-totals.total):0,note:$('#saleNote').value.trim(),items:cart.map(item=>{const p=product(item.productId);return{productId:p.id,name:p.name,sku:p.sku,price:p.price,qty:item.qty}}),subtotal:totals.subtotal,discount:totals.discount,total:totals.total,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User',invoiceArchiveStatus:'pending'};
   const button=$('#completeSale');button.disabled=true;button.firstElementChild.textContent='Completing sale…';
   try{
     const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);const result=await firebase.runTransaction(root,current=>{const live=normalizeState(current);for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId);if(!p||p.stock<item.qty)throw new Error(`${item.name} no longer has enough stock`);}for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId),before=p.stock;p.stock-=item.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'out',qty:item.qty,before,after:p.stock,reference:sale.id,note:`Customer sale — ${sale.customer}`,createdAt:sale.createdAt,user:sale.user});}live.sales.unshift(sale);live.audit.unshift({id:uid('a'),action:'Sale completed',detail:`${sale.id} for ${sale.customer} — ${money(sale.total)}`,createdAt:sale.createdAt,user:sale.user});return live;},{applyLocally:false});
-    if(!result.committed)throw new Error('Sale could not be committed');cart=[];$('#saleCustomer').value='';$('#salePhone').value='';$('#saleEmail').value='';$('#saleDiscount').value=0;$('#saleReceived').value='';$('#saleNote').value='';$('#salePayment').value='Cash';$('#amountReceivedLabel').classList.remove('hidden');renderCart();toast(`${sale.id} completed`);printReceipt(sale,printWindow);
+    if(!result.committed)throw new Error('Sale could not be committed');
+    try{const archivedAt=await archiveInvoice(sale);sale.invoiceArchiveStatus='synced';sale.invoiceArchivedAt=archivedAt;await markInvoiceArchive(sale.id,'synced',archivedAt);}
+    catch(archiveError){console.error(archiveError);invoiceCloudOnline=false;toast('Sale saved. Invoice vault sync is pending—use Sync from invoice history.','error');}
+    cart=[];$('#saleCustomer').value='';$('#salePhone').value='';$('#saleEmail').value='';$('#saleDiscount').value=0;$('#saleReceived').value='';$('#saleNote').value='';$('#salePayment').value='Cash';$('#amountReceivedLabel').classList.remove('hidden');renderCart();toast(`${sale.id} completed`);printReceipt(sale,printWindow);
   }catch(error){console.error(error);if(printWindow)printWindow.close();$('#saleError').textContent=error.message||'Sale could not be completed. Please retry.';}
   finally{button.disabled=!cart.length||!cloudOnline;button.firstElementChild.textContent='Charge & print receipt';}
 });
-$('#salesTable').addEventListener('click',e=>{const b=e.target.closest('[data-print-sale]');if(!b)return;const sale=state.sales.find(s=>s.id===b.dataset.printSale);if(sale)printReceipt(sale)});
+$('#salesTable').addEventListener('click',async e=>{const print=e.target.closest('[data-print-sale]'),view=e.target.closest('[data-view-sale]'),sync=e.target.closest('[data-sync-sale]'),id=print?.dataset.printSale||view?.dataset.viewSale||sync?.dataset.syncSale;if(!id)return;const sale=state.sales.find(s=>s.id===id);if(!sale)return;if(print)printReceipt(sale);if(view)openInvoiceDetail(sale);if(sync){sync.disabled=true;sync.textContent='Syncing…';try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} synced to invoice vault`);}catch(error){console.error(error);toast('Invoice vault unavailable. Confirm the same admin login exists in the invoice Firebase project.','error');}finally{sync.disabled=false;sync.textContent='Sync';}}});
+$$('[data-close-invoice]').forEach(button=>button.addEventListener('click',()=>$('#invoiceDetailDialog').close()));
+$('#invoiceDetailPrint').addEventListener('click',()=>{const sale=state.sales.find(item=>item.id===$('#invoiceDetailDialog').dataset.saleId);if(sale)printReceipt(sale)});
 $('#poTabs').addEventListener('click',e=>{const b=e.target.closest('[data-po]');if(!b)return;poFilter=b.dataset.po;$$('#poTabs button').forEach(x=>x.classList.toggle('active',x===b));renderPurchases()});
 
 function openDialog(name,trigger){
   const d=$(`#${name}Dialog`);if(!d)return;
-  if(name==='product'){$('#productForm').reset();$('#productId').value='';$('#productModalTitle').textContent='Add product';$('#productReorder').value=10}
+  if(name==='product'){$('#productForm').reset();$('#productId').value='';$('#productModalTitle').textContent='Add product';$('#productReorder').value=10;$('#deleteProductBtn').classList.add('hidden')}
   if(name==='movement'){$('#movementForm').reset();$('#movementError').textContent='';if(trigger?.dataset.type)$(`input[name="movementType"][value="${trigger.dataset.type}"]`).checked=true;updateStockHint()}
   if(name==='purchase'){$('#purchaseForm').reset();$('#purchaseDate').value=new Date(Date.now()+7*86400000).toISOString().slice(0,10)}
   if(name==='supplier')$('#supplierForm').reset(); d.showModal();
@@ -248,7 +299,11 @@ $('#productForm').addEventListener('submit',async e=>{
   if(state.products.some(p=>p.sku===item.sku&&p.id!==id)){toast('That SKU already exists.','error');return}
   if(existing)Object.assign(existing,item);else state.products.unshift(item);await addAudit(existing?'Product updated':'Product added',`${item.name} (${item.sku}) ${existing?'was updated':'was created'}`);$('#productDialog').close();renderAll();toast(existing?'Product updated':'Product added to inventory');
 });
-$('#inventoryTable').addEventListener('click',async e=>{const b=e.target.closest('[data-product-menu]');if(!b)return;const p=product(b.dataset.productMenu);if(!p)return;$('#productId').value=p.id;$('#productName').value=p.name;$('#productSku').value=p.sku;$('#productCategory').value=p.category;$('#productStock').value=p.stock;$('#productReorder').value=p.reorder;$('#productCost').value=p.cost;$('#productPrice').value=p.price;$('#productSupplier').value=p.supplierId||'';$('#productModalTitle').textContent='Edit product';$('#productDialog').showModal()});
+$('#inventoryTable').addEventListener('click',async e=>{const b=e.target.closest('[data-product-menu]');if(!b)return;const p=product(b.dataset.productMenu);if(!p)return;$('#productId').value=p.id;$('#productName').value=p.name;$('#productSku').value=p.sku;$('#productCategory').value=p.category;$('#productStock').value=p.stock;$('#productReorder').value=p.reorder;$('#productCost').value=p.cost;$('#productPrice').value=p.price;$('#productSupplier').value=p.supplierId||'';$('#productModalTitle').textContent='Edit product';$('#deleteProductBtn').classList.remove('hidden');$('#productDialog').showModal()});
+$('#deleteProductBtn').addEventListener('click',()=>{const p=product($('#productId').value);if(!p)return;$('#deleteProductDialog').dataset.productId=p.id;$('#deleteProductName').textContent=`${p.name} (${p.sku})`;$('#deleteProductError').textContent='';$('#productDialog').close();$('#deleteProductDialog').showModal()});
+$$('[data-close-product]').forEach(button=>button.addEventListener('click',()=>$('#productDialog').close()));
+$$('[data-close-delete]').forEach(button=>button.addEventListener('click',()=>$('#deleteProductDialog').close()));
+$('#confirmDeleteProduct').addEventListener('click',async()=>{const id=$('#deleteProductDialog').dataset.productId,p=product(id),button=$('#confirmDeleteProduct');if(!p)return;button.disabled=true;button.textContent='Deleting…';$('#deleteProductError').textContent='';try{const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),deletedAt=new Date().toISOString(),result=await firebase.runTransaction(root,current=>{const live=normalizeState(current),target=live.products.find(item=>item.id===id);if(!target)return;live.products=live.products.filter(item=>item.id!==id);live.audit.unshift({id:uid('a'),action:'Product deleted',detail:`${target.name} (${target.sku}) was permanently removed from active inventory`,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});return live;},{applyLocally:false});if(!result.committed)throw new Error('Product was already removed or could not be deleted');cart=cart.filter(item=>item.productId!==id);$('#deleteProductDialog').close();toast(`${p.name} deleted`);}catch(error){console.error(error);$('#deleteProductError').textContent=error.message||'Product could not be deleted.';}finally{button.disabled=false;button.textContent='Delete permanently';}});
 function updateStockHint(){const p=product($('#movementProduct').value);$('#currentStockHint').textContent=p?`Current stock: ${p.stock} units`:'Current stock: —'}
 $('#movementProduct').addEventListener('change',updateStockHint);
 $('#movementForm').addEventListener('submit',async e=>{

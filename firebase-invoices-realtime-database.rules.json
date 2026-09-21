@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "invoiceVault": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "records": {
+          ".indexOn": ["invoice/issuedAt", "customer/name", "totals/grandTotal"]
+        },
+        "index": {
+          ".indexOn": ["issuedAt", "customer", "payment", "total"]
+        }
+      }
+    }
+  }
+}
