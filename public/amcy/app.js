@@ -199,8 +199,9 @@ $('#loginForm').addEventListener('submit',async e=>{
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
 $('#logoutBtn').addEventListener('click',async()=>{clearTrustedSession();if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
-const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings','product-editor':'Product details','movement-editor':'Record stock movement','supplier-editor':'Supplier details','purchase-editor':'New purchase order','invoice-detail':'Invoice details'};
+const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings','security-dz':'Security DZ','product-editor':'Product details','movement-editor':'Record stock movement','supplier-editor':'Supplier details','purchase-editor':'New purchase order','invoice-detail':'Invoice details'};
 function go(view){
+  if(view!=='security-dz'&&dangerScope)cancelDangerFlow(true);
   $$('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));
   $$('#mainNav button').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
   $('#pageTitle').textContent=titles[view]||'AMCY Trader';$('#sidebar').classList.remove('open');
@@ -212,7 +213,7 @@ $('#menuBtn').addEventListener('click',()=>$('#sidebar').classList.add('open'));
 $('#closeSidebar').addEventListener('click',()=>$('#sidebar').classList.remove('open'));
 
 function renderAll(){
-  renderKpis();renderDashboard();renderInventory();renderMovements();renderPOS();renderSales();renderPurchases();renderSuppliers();renderReports();renderAudit();populateSelects();renderProfile();refreshCustomSelects();updateSync();
+  renderKpis();renderDashboard();renderInventory();renderMovements();renderPOS();renderSales();renderPurchases();renderSuppliers();renderReports();renderAudit();renderSecurityDZ();populateSelects();renderProfile();refreshCustomSelects();updateSync();
 }
 function renderKpis(){
   const value=state.products.reduce((s,p)=>s+p.stock*p.cost,0), units=state.products.reduce((s,p)=>s+p.stock,0), low=state.products.filter(p=>p.stock<=p.reorder), open=state.purchases.filter(p=>p.status!=='received');
@@ -291,6 +292,55 @@ function renderReports(){
 }
 function renderAudit(){
   $('#auditTimeline').innerHTML=[...state.audit].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(a=>`<div class="audit-item"><span>✓</span><div><b>${esc(a.action)}</b><p>${esc(a.detail)}</p></div><time>${formatTime(a.createdAt)}<br>${esc(a.user)}</time></div>`).join('')||'<div class="empty-state"><p>No audit events yet.</p></div>';
+}
+const dangerActions={
+  invoices:{title:'Clear all invoices',phrase:'DELETE ALL INVOICES',description:'Deletes every sale from the main database and every archived record from the separate invoice vault.'},
+  purchases:{title:'Clear all purchase orders',phrase:'DELETE ALL PURCHASES',description:'Deletes draft, ordered, and received purchase-order records. Existing stock quantities are not reversed.'},
+  movements:{title:'Clear stock movement history',phrase:'DELETE MOVEMENT HISTORY',description:'Deletes the full stock ledger. Current product quantities remain unchanged.'},
+  products:{title:'Clear all products',phrase:'DELETE ALL PRODUCTS',description:'Deletes every active product and clears the current checkout cart. Historical invoices remain unchanged.'},
+  suppliers:{title:'Clear all suppliers',phrase:'DELETE ALL SUPPLIERS',description:'Deletes the supplier directory. Existing purchase records retain their stored identifiers.'},
+  audit:{title:'Clear audit history',phrase:'DELETE AUDIT HISTORY',description:'Deletes the complete administrative event history.'},
+  workspace:{title:'Clear operational database',phrase:'RESET AMCY DATABASE',description:'Deletes products, suppliers, movements, purchase orders, invoices, audit history, and the separate invoice vault. Business profile settings remain.'}
+};
+let dangerScope='',dangerTimer=null,dangerSeconds=10,dangerReady=false;
+function renderSecurityDZ(){
+  const counts={Products:state.products.length,Suppliers:state.suppliers.length,Movements:state.movements.length,Purchases:state.purchases.length,Invoices:state.sales.length,Audit:state.audit.length};
+  $('#securityDataCounts').innerHTML=Object.entries(counts).map(([label,value])=>`<div><span>${label}</span><strong>${value.toLocaleString('en-PK')}</strong></div>`).join('');
+  Object.entries({Products:state.products.length,Suppliers:state.suppliers.length,Movements:state.movements.length,Purchases:state.purchases.length,Invoices:state.sales.length,Audit:state.audit.length}).forEach(([name,value])=>{const el=$(`#dangerCount${name}`);if(el)el.textContent=`${value.toLocaleString('en-PK')} ${value===1?'record':'records'}`;});
+}
+function cancelDangerFlow(silent=false){
+  if(dangerTimer){clearInterval(dangerTimer);dangerTimer=null;}
+  dangerScope='';dangerSeconds=10;dangerReady=false;
+  $('#dangerConfirmation').classList.add('hidden');$('#dangerTimerBox').classList.add('hidden');$('#dangerFinalApproval').classList.add('hidden');
+  $('#dangerPhraseInput').value='';$('#dangerPhraseInput').disabled=false;$('#dangerPhraseError').textContent='';$('#dangerApprovalCheck').checked=false;$('#startDangerTimer').disabled=true;$('#executeDangerDelete').disabled=true;$('#dangerDeleteError').textContent='';
+  if(!silent)$('#dangerActionGrid').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function selectDangerAction(scope){
+  const action=dangerActions[scope];if(!action)return;cancelDangerFlow(true);dangerScope=scope;
+  $('#dangerActionTitle').textContent=action.title;$('#dangerActionDescription').textContent=action.description;$('#dangerRequiredPhrase').textContent=action.phrase;$('#dangerConfirmation').classList.remove('hidden');$('#dangerPhraseInput').focus();$('#dangerConfirmation').scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function clearInvoiceVault(){
+  if(!invoiceFirebase||!invoiceUser)throw new Error('The invoice vault is not authenticated. Sign in again before clearing invoices.');
+  await invoiceFirebase.remove(invoiceFirebase.ref(invoiceFirebase.db,`invoiceVault/${invoiceUser.uid}`));invoiceCloudOnline=true;
+}
+async function executeDangerAction(scope){
+  if(currentUser?.uid!==ADMIN_UID)throw new Error('Administrator authentication is required.');
+  if(scope==='invoices'||scope==='workspace')await clearInvoiceVault();
+  const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),action=dangerActions[scope],deletedAt=new Date().toISOString();
+  const result=await firebase.runTransaction(root,current=>{
+    const live=normalizeState(current);
+    if(scope==='workspace'){const profile={...live.profile};return{...blankState(),profile};}
+    if(scope==='invoices')live.sales=[];
+    if(scope==='purchases')live.purchases=[];
+    if(scope==='movements')live.movements=[];
+    if(scope==='products')live.products=[];
+    if(scope==='suppliers')live.suppliers=[];
+    if(scope==='audit')live.audit=[];
+    if(scope!=='audit')live.audit.unshift({id:uid('a'),action:'Security DZ deletion',detail:action.title,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});
+    return live;
+  },{applyLocally:false});
+  if(!result.committed)throw new Error('The database did not accept the deletion.');
+  state=normalizeState(result.snapshot.val());if(scope==='products'||scope==='workspace')cart=[];renderAll();
 }
 function populateSelects(){
   const prod='<option value="">Select a product</option>'+state.products.map(p=>`<option value="${p.id}">${esc(p.name)} — ${p.stock} in stock</option>`).join('');$('#movementProduct').innerHTML=prod;$('#purchaseProduct').innerHTML=prod;
@@ -386,6 +436,23 @@ function csvExport(){
   const rows=[['Product','SKU','Category','Stock','Reorder Level','Purchase Cost','Selling Price','Stock Value','Supplier'],...state.products.map(p=>[p.name,p.sku,p.category,p.stock,p.reorder,p.cost,p.price,p.stock*p.cost,supplier(p.supplierId)?.name||''])];const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`AMCY-Inventory-${new Date().toISOString().slice(0,10)}.csv`;a.click();URL.revokeObjectURL(a.href);toast('Inventory report downloaded');
 }
 ['exportInventory','quickExport','downloadReport'].forEach(id=>$('#'+id).addEventListener('click',csvExport));
+$('#downloadFullBackup').addEventListener('click',()=>{const backup={schemaVersion:2,exportedAt:new Date().toISOString(),workspaceUid:ADMIN_UID,data:state};const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}),link=document.createElement('a');link.href=URL.createObjectURL(blob);link.download=`AMCY-Trader-Backup-${new Date().toISOString().slice(0,10)}.json`;link.click();URL.revokeObjectURL(link.href);toast('Full database backup downloaded');});
+$('#dangerActionGrid').addEventListener('click',event=>{const button=event.target.closest('[data-danger-scope]');if(button)selectDangerAction(button.dataset.dangerScope);});
+$('#cancelDangerAction').addEventListener('click',()=>cancelDangerFlow());
+$('#dangerPhraseInput').addEventListener('input',event=>{const action=dangerActions[dangerScope],matches=!!action&&event.target.value===action.phrase;$('#startDangerTimer').disabled=!matches;$('#dangerPhraseError').textContent=event.target.value&&!matches?'The confirmation phrase does not match.':'';});
+$('#startDangerTimer').addEventListener('click',()=>{
+  const action=dangerActions[dangerScope];if(!action||$('#dangerPhraseInput').value!==action.phrase)return;
+  dangerSeconds=10;dangerReady=false;$('#dangerPhraseInput').disabled=true;$('#startDangerTimer').disabled=true;$('#dangerTimerValue').textContent=String(dangerSeconds);$('#dangerTimerTitle').textContent='Safety hold active';$('#dangerTimerText').textContent='Review the selected action while the timer completes.';$('#dangerTimerBox').classList.remove('hidden');
+  dangerTimer=setInterval(()=>{dangerSeconds-=1;$('#dangerTimerValue').textContent=String(Math.max(0,dangerSeconds));if(dangerSeconds<=0){clearInterval(dangerTimer);dangerTimer=null;dangerReady=true;$('#dangerTimerTitle').textContent='Final approval required';$('#dangerTimerText').textContent='The safety timer is complete. Confirm that you understand the deletion.';$('#dangerFinalApproval').classList.remove('hidden');$('#dangerApprovalCheck').focus();}},1000);
+});
+$('#dangerApprovalCheck').addEventListener('change',event=>{$('#executeDangerDelete').disabled=!(dangerReady&&event.target.checked);});
+$('#executeDangerDelete').addEventListener('click',async event=>{
+  const action=dangerActions[dangerScope];if(!action||!dangerReady||!$('#dangerApprovalCheck').checked||$('#dangerPhraseInput').value!==action.phrase)return;
+  const button=event.currentTarget;$('#dangerDeleteError').textContent='';setButtonBusy(button,true,'Deleting records');
+  try{const completedTitle=action.title;await executeDangerAction(dangerScope);cancelDangerFlow(true);toast(`${completedTitle} completed`);}
+  catch(error){console.error(error);$('#dangerDeleteError').textContent=error.message||'Records could not be deleted. No further action was taken.';}
+  finally{setButtonBusy(button,false);}
+});
 $('#saveProfile').addEventListener('click',async event=>{const button=event.currentTarget;setButtonBusy(button,true,'Saving');try{state.profile={...state.profile,businessName:$('#businessName').value.trim(),currency:$('#currencySetting').value,location:$('#locationSetting').value.trim(),adminName:$('#nameSetting').value.trim(),dataVersion:2};await addAudit('Business profile updated','Company settings were changed');renderAll();toast('Business profile saved');}catch(error){console.error(error);toast('Business profile could not be saved.','error');}finally{setButtonBusy(button,false);}});
 
 $('#globalSearchBtn').addEventListener('click',()=>{$('#searchOverlay').classList.remove('hidden');$('#globalSearch').focus();renderSearch('')});

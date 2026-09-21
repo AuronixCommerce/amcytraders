@@ -63,6 +63,7 @@
         <p>SYSTEM</p>
         <button data-view="audit"><span data-icon="history"></span>Audit log</button>
         <button data-view="settings"><span data-icon="settings"></span>Settings</button>
+        <button data-view="security-dz"><span data-icon="alert"></span>Security DZ</button>
       </nav>
       <div class="sidebar-user"><div class="avatar">AD</div><div><b id="adminName">Admin User</b><small id="adminEmail">admin@amcytrader.com</small></div><button id="logoutBtn" title="Sign out">↗</button></div>
     </aside>
@@ -141,6 +142,33 @@
       </section>
 
       <section id="view-audit" class="view"><article class="panel table-panel"><div class="table-caption"><div><h3>Audit log</h3><p>Administrative actions and important system events.</p></div></div><div id="auditTimeline" class="audit-timeline"></div></article></section>
+
+      <section id="view-security-dz" class="view security-dz-view">
+        <div class="security-dz-head"><div><span class="eyebrow">RESTRICTED ADMINISTRATION</span><h2>Security DZ</h2><p>Backup, inspect, and permanently clear selected AMCY Trader records.</p></div><button id="downloadFullBackup" class="ghost-btn">Download full backup</button></div>
+        <div id="securityDataCounts" class="security-counts"></div>
+        <article class="panel security-dz-panel">
+          <div class="security-dz-intro"><strong>Destructive database controls</strong><p>Deletion cannot be undone. Each control requires its own confirmation phrase, a 10-second safety timer, and final approval.</p></div>
+          <div id="dangerActionGrid" class="danger-action-grid">
+            <button data-danger-scope="invoices"><span>Invoices</span><b id="dangerCountInvoices">0 records</b><small>Main sales history and separate invoice vault</small></button>
+            <button data-danger-scope="purchases"><span>Purchases</span><b id="dangerCountPurchases">0 records</b><small>All purchase orders</small></button>
+            <button data-danger-scope="movements"><span>Movements</span><b id="dangerCountMovements">0 records</b><small>Entire stock movement ledger</small></button>
+            <button data-danger-scope="products"><span>Products</span><b id="dangerCountProducts">0 records</b><small>Active product inventory</small></button>
+            <button data-danger-scope="suppliers"><span>Suppliers</span><b id="dangerCountSuppliers">0 records</b><small>Supplier directory</small></button>
+            <button data-danger-scope="audit"><span>Audit history</span><b id="dangerCountAudit">0 records</b><small>Administrative event history</small></button>
+            <button data-danger-scope="workspace" class="danger-action-critical"><span>Operational database</span><b>Clear everything</b><small>Products, suppliers, movements, orders, invoices and invoice vault</small></button>
+          </div>
+          <section id="dangerConfirmation" class="danger-confirmation hidden" aria-live="polite">
+            <div class="danger-confirmation-head"><div><span class="eyebrow">SELECTED ACTION</span><h3 id="dangerActionTitle">Clear records</h3></div><button type="button" id="cancelDangerAction" class="ghost-btn">Cancel</button></div>
+            <p id="dangerActionDescription"></p>
+            <label>Type <code id="dangerRequiredPhrase">DELETE</code> exactly<input id="dangerPhraseInput" autocomplete="off" spellcheck="false" placeholder="Enter confirmation phrase"><small id="dangerPhraseError" class="field-error"></small></label>
+            <button type="button" id="startDangerTimer" class="ghost-btn" disabled>Start 10-second safety timer</button>
+            <div id="dangerTimerBox" class="danger-timer-box hidden"><div class="danger-timer-ring"><strong id="dangerTimerValue">10</strong><small>seconds</small></div><div><b id="dangerTimerTitle">Safety hold active</b><p id="dangerTimerText">Review the selected action while the timer completes.</p></div></div>
+            <label id="dangerFinalApproval" class="danger-final-approval hidden"><input id="dangerApprovalCheck" type="checkbox"><span>Yes, I understand this permanently deletes the selected records.</span></label>
+            <div id="dangerDeleteError" class="form-error"></div>
+            <div class="workflow-actions"><button type="button" id="executeDangerDelete" class="danger-btn" disabled>Delete permanently</button></div>
+          </section>
+        </article>
+      </section>
 
       <section id="view-settings" class="view">
         <div class="settings-layout"><aside><button class="active">Business profile</button><button>Cloud connection</button><button>Preferences</button><button>Security</button></aside><div>
