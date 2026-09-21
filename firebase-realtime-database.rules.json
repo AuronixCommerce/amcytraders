@@ -3,8 +3,7 @@
     "businesses": {
       "$uid": {
         ".read": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'",
-        ".write": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'",
-        ".validate": "newData.hasChildren(['profile', 'products', 'suppliers', 'movements', 'purchases', 'audit'])"
+        ".write": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'"
       }
     }
   }
