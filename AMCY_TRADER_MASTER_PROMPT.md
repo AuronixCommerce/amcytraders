@@ -1,0 +1,495 @@
+# AMCY Trader — Master Development Prompt
+
+Build a complete, production-ready business operations application named **AMCY Trader**. It must be a real working system, not a visual demo. Every record must be stored and synchronized through Firebase Realtime Database. Do not include mock products, mock invoices, demo customers, fake charts, or seeded business records.
+
+## Product goal
+
+AMCY Trader is an administrator-only inventory, sales, invoicing, purchasing, customer, expense, reporting, and business-control system. It should let the business owner manage the complete operational cycle:
+
+1. Add products and monitor inventory.
+2. Record incoming, outgoing, adjusted, damaged, reserved, and transferred stock.
+3. Create purchase orders and receive supplier stock.
+4. Add customers, review their invoice history, manage credit balances, and export statements.
+5. Complete customer checkout, deduct stock transactionally, generate a professional receipt, and archive the invoice in a separate Firebase project.
+6. Process returns, refunds, and partial credit payments.
+7. Record expenses and calculate gross profit, operating expenses, and net profit.
+8. Open and close cashier/register shifts with cash reconciliation.
+9. Display useful alerts for low stock, overdue credit, purchase deliveries, expiring batches, and invoice synchronization failures.
+10. Safely back up or clear selected databases through Security DZ.
+
+## Required stack
+
+- Next.js 16 App Router
+- React 19
+- TypeScript for the Next.js application shell
+- Firebase Authentication using email/password
+- Firebase Realtime Database for all persistent data
+- pnpm
+- Node.js 22.13 or newer
+- Vercel-compatible project configuration
+- Responsive desktop, tablet, and mobile interface
+
+The current application can preserve its authenticated static operations client under `public/amcy`, embedded by the Next.js App Router shell, or be migrated into React components as long as all behavior and data remain intact.
+
+## Firebase administrator security
+
+Only this Firebase Authentication UID is authorized to access the main AMCY Trader workspace:
+
+```text
+sAYmgRLwq4g1MIYQPRrT5CeiqJB3
+```
+
+Do not authorize access based only on an email address. Verify the authenticated UID. Use Firebase local persistence and automatically refreshed Firebase ID tokens. Trusted-device access may last for a maximum of 180 days, after which the administrator must sign in again. A manual logout must immediately clear the trusted-device deadline.
+
+## Main Firebase project
+
+Use this Firebase project for authentication and all operational business data:
+
+```js
+const firebaseConfig = {
+  apiKey: "AIzaSyB8AYL6JYpKJYxtS_1EsEMpMFdrjYIM06k",
+  authDomain: "amcy-traders.firebaseapp.com",
+  databaseURL: "https://amcy-traders-default-rtdb.firebaseio.com",
+  projectId: "amcy-traders",
+  storageBucket: "amcy-traders.firebasestorage.app",
+  messagingSenderId: "70776800554",
+  appId: "1:70776800554:web:7750826c31f81830410a53"
+};
+```
+
+Store the main application record under:
+
+```text
+businesses/sAYmgRLwq4g1MIYQPRrT5CeiqJB3
+```
+
+Publish these Realtime Database rules in the main Firebase project:
+
+```json
+{
+  "rules": {
+    "businesses": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'",
+        ".write": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'"
+      }
+    }
+  }
+}
+```
+
+The Firebase browser configuration is public client configuration. Do not claim that hiding the API key secures the application. Security must come from Firebase Authentication and the database rules.
+
+## Separate invoice-vault Firebase project
+
+Use this second Firebase project only for durable invoice archives:
+
+```js
+const invoiceFirebaseConfig = {
+  apiKey: "AIzaSyBS_prlnawp0sQsXp-nAenkd0-Pd1Vj93o",
+  authDomain: "amcy-traders-invoices.firebaseapp.com",
+  databaseURL: "https://amcy-traders-invoices-default-rtdb.firebaseio.com",
+  projectId: "amcy-traders-invoices",
+  storageBucket: "amcy-traders-invoices.firebasestorage.app",
+  messagingSenderId: "970228135991",
+  appId: "1:970228135991:web:eede9f42c5c8398a9de7b2"
+};
+```
+
+Enable email/password authentication in this project and create the same administrator credentials. The UID may differ from the main project. Namespace invoice records under the authenticated invoice-project UID:
+
+```text
+invoiceVault/{invoiceProjectAuthenticatedUid}/records/{safeInvoiceNumber}
+invoiceVault/{invoiceProjectAuthenticatedUid}/index/{safeInvoiceNumber}
+```
+
+Publish these invoice-project rules:
+
+```json
+{
+  "rules": {
+    "invoiceVault": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        "records": {
+          ".indexOn": ["invoice/issuedAt", "customer/name", "totals/grandTotal"]
+        },
+        "index": {
+          ".indexOn": ["issuedAt", "customer", "payment", "total"]
+        }
+      }
+    }
+  }
+}
+```
+
+## Main database model
+
+The business object must be normalized safely when old properties are absent. Never destroy valid existing records during a schema upgrade.
+
+```text
+businesses/{adminUid}
+├── profile
+│   ├── businessName
+│   ├── currency
+│   ├── location
+│   ├── adminName
+│   ├── invoicePrefix
+│   ├── nextInvoiceNumber
+│   ├── taxRate
+│   ├── defaultWarehouse
+│   └── dataVersion
+├── products[]
+├── suppliers[]
+├── customers[]
+├── movements[]
+├── purchases[]
+├── sales[]
+├── returns[]
+├── expenses[]
+├── registers[]
+├── team[]
+├── notifications[]
+├── securityEvents[]
+└── audit[]
+```
+
+## Authentication screen
+
+- Present an AMCY-branded administrator login.
+- Never display “Firebase” in user-facing labels or routine errors. Use “AMCY Cloud” or “AMCY secure access.”
+- Show custom inline validation messages. Never rely on browser validation bubbles.
+- Show an iOS-style twelve-line circular loader while authentication is running.
+- Reject every authenticated account whose UID is not the authorized administrator UID.
+- Clearly report unavailable cloud access, invalid credentials, disabled accounts, throttling, and network problems.
+
+## Application shell and navigation
+
+Provide a responsive left navigation with:
+
+- Overview
+- Inventory
+- Stock movements
+- Point of sale
+- Customers
+- Purchase orders
+- Suppliers
+- Reports
+- Audit log
+- Settings
+- Security DZ
+
+Mobile navigation must have an obvious Close button. Every section must start at the correct top position without blank vertical space.
+
+## Dedicated customer-management module
+
+Customers must be a complete dedicated module rather than a modal.
+
+### Customer directory
+
+- Search by customer name, code, phone, email, address, or tax identifier.
+- Filter by all customers, customers with outstanding credit, and customers with no balance.
+- Show customer count, lifetime revenue, outstanding credit, and customers active this month.
+- List customer name/code, contact data, invoice count, purchase total, credit balance, and last purchase date.
+- Provide Add Customer and View Profile actions.
+
+### Customer add/edit page
+
+- Open as a full in-app page with reliable Back and Cancel buttons.
+- Only customer name is required.
+- Optional fields: phone, email, address, tax/registration number, opening credit balance, credit limit, notes, tags, and status.
+- Generate a unique customer code when omitted.
+- Use custom inline validation and branded selection controls.
+
+### Customer profile page
+
+- Show profile identity and contact details.
+- Show lifetime purchases, invoice count, amount paid, outstanding credit, available credit, and last purchase.
+- Show full invoice history with View Invoice and Print actions.
+- Show credit-payment history.
+- Allow recording a partial or full customer payment.
+- Allow downloading a CSV customer statement.
+- Allow editing the customer.
+- Keep invoice and payment records linked using `customerId`, not only customer name.
+
+## Inventory
+
+- Add, edit, and permanently delete products.
+- Product name is the only required field.
+- Generate a unique SKU when SKU is empty.
+- Optional properties: category, barcode, variant, batch number, expiry date, warehouse, supplier, opening stock, reserved stock, damaged stock, reorder level, purchase cost, and selling price.
+- Show available stock as `physical stock - reserved - damaged`.
+- Support barcode-based search.
+- Show low stock, out of stock, expiring batches, slow-moving products, and inventory value.
+- Support stock transfers between warehouse names.
+- Preserve historical invoice and movement descriptions if a product is later deleted.
+
+## Stock movements
+
+- Provide a dedicated full-page Record Movement workflow.
+- Support stock in, stock out, exact-count adjustment, damaged stock, reserved stock, release reservation, and warehouse transfer.
+- Require a product and valid quantity; reference and note remain optional.
+- Store before/after quantities, movement type, reference, note, user, date, warehouse origin, and warehouse destination.
+- Reject stock-out operations that would produce negative available stock.
+
+## Checkout and invoices
+
+- Search and select products with real-time availability.
+- Select a saved customer or use a walk-in customer.
+- Selecting a saved customer should populate their contact information.
+- Support quantities, line totals, order discount, configurable tax, payment method, amount received, change, and invoice note.
+- Support Cash, Bank Transfer, Card, and Credit.
+- Reject a credit sale that would exceed the customer credit limit.
+- Detect likely duplicate checkout submissions by comparing customer, items, total, and recent completion time.
+- Generate invoice numbers using configurable prefix and next sequence.
+- Complete each sale through one Realtime Database transaction that verifies stock, deducts stock, writes movement entries, writes the sale, updates invoice sequence, and writes an audit event.
+- After the main transaction succeeds, archive the complete invoice in the separate invoice vault.
+- If archive synchronization fails, keep the sale, mark its archive status pending, and provide Retry Sync.
+
+### Invoice history and detail
+
+- Search by invoice number, customer, phone, email, SKU, or item.
+- Filter by payment method and date range.
+- View a dedicated invoice detail page.
+- Print a professional receipt.
+- Download invoice PDF when supported.
+- Share invoice text through the Web Share API and provide clipboard fallback.
+- Record partial credit payments against linked customers.
+- Process partial or full returns by selecting line-item quantities.
+- A return must restore stock transactionally, create return movement entries, create a return record, update refunded totals, and retain the original invoice.
+- Prevent returned quantity from exceeding the originally sold quantity minus previous returns.
+
+## Receipt requirements
+
+Create a clean print-ready receipt containing:
+
+- Business name and location
+- Invoice number and status
+- Customer name, phone, and email
+- Date and cashier
+- Items, SKU, quantity, rate, and line totals
+- Subtotal, discount, tax, total, payment method, received amount, and change
+- Return/refund summary when applicable
+- Invoice note
+- A Print Receipt action
+
+## Purchases and suppliers
+
+- Maintain supplier profiles with company name, contact, phone, email, address, lead time, and payment terms.
+- Support purchase quotation, draft, ordered, partially received, received, and cancelled statuses.
+- Store supplier invoice/reference number, expected date, product, ordered quantity, received quantity, unit cost, paid amount, outstanding amount, and note.
+- Allow partial receiving without exceeding ordered quantity.
+- Receiving stock must create stock-in movement entries.
+- Support purchase returns that reduce stock and supplier payable.
+- Show overdue expected deliveries and outstanding supplier bills.
+
+## Expenses, profit, and cash flow
+
+- Record expense description, amount, category, date, note, and user.
+- Categories should include Operations, Transport, Utilities, Payroll, Marketing, and Other.
+- Calculate revenue, cost of goods sold, gross profit, expenses, net profit, refunds, and cash flow.
+- Support Today, 7 days, 30 days, current month, and custom date ranges.
+- Export finance reports to CSV and provide print-friendly output.
+
+## Dashboard intelligence
+
+Show real operational information only:
+
+- Today’s sales
+- Today’s gross profit
+- Today’s expenses
+- Today’s net profit
+- Stock value
+- Active products and available units
+- Low/out-of-stock products
+- Open purchase orders and incoming units
+- Outstanding customer credit
+- Outstanding supplier bills
+- Best-selling products
+- Slow-moving products
+- Reorder forecast
+- Current register shift
+- Prioritized business notifications
+
+## Roles and activity
+
+- Define Owner, Manager, and Cashier roles.
+- Owner: all permissions including Security DZ and settings.
+- Manager: inventory, purchases, suppliers, customers, reports, and non-destructive settings.
+- Cashier: checkout, customer lookup, invoices, and assigned register shift.
+- Store role definitions and team records in the main database.
+- Do not pretend client-side role labels alone are security. If additional users are enabled, update Firebase rules or custom claims so backend authorization matches the interface.
+- Record important actions in the audit trail.
+
+## Register shifts
+
+- Allow opening a register with opening cash.
+- Store opening user and time.
+- Track cash sales, cash refunds, cash added, and cash withdrawn.
+- Allow closing the register with counted cash.
+- Calculate expected cash and variance.
+- Keep immutable shift history.
+
+## Notifications
+
+Generate useful notifications from live data:
+
+- Low and out-of-stock products
+- Expiring batches
+- Overdue customer credit
+- Supplier delivery reminders
+- Outstanding supplier balances
+- Failed invoice-vault synchronization
+- Open register older than the configured business day
+
+Avoid meaningless notification badges. Each notification must identify the affected record and lead to the relevant section.
+
+## Reports
+
+- Custom date filtering
+- Sales report
+- Gross and net profit report
+- Expense report
+- Customer credit report
+- Supplier payable report
+- Inventory valuation report
+- Stock movement report
+- Returns/refunds report
+- Register reconciliation report
+- Previous-period comparison
+- CSV export and print-friendly reporting
+
+## Settings
+
+Provide editable business settings:
+
+- Business name
+- Location
+- Base currency: PKR, USD, AED, EUR
+- Administrator display name
+- Invoice prefix
+- Next invoice number
+- Default tax percentage
+- Default warehouse
+- Role permission summary
+- Main cloud-connection status
+- Invoice-vault connection status
+
+Use custom select/listbox components rather than default browser selection menus.
+
+## Security DZ
+
+Security DZ must be a dedicated menu page visible only to the authorized owner/admin account.
+
+It must show live record counts and provide:
+
+- Download full JSON backup
+- Restore a validated AMCY backup
+- Clear invoices in the main database and separate invoice vault
+- Clear purchase orders
+- Clear stock movements
+- Clear products
+- Clear suppliers
+- Clear customers
+- Clear expenses
+- Clear audit history
+- Clear the complete operational database while preserving business settings
+- Security deletion history
+
+Every destructive action must require all of the following:
+
+1. Download an automatic backup immediately before deletion.
+2. Type the exact action-specific confirmation phrase.
+3. Complete a visible 10-second safety timer.
+4. Check a final “Yes, I understand” approval.
+5. Press the final Delete Permanently button.
+
+Leaving Security DZ must cancel any active timer. Do not use browser `confirm()` or modal popups.
+
+## UI and interaction rules
+
+Use a serious, compact business-operations visual language.
+
+- No harsh gradients
+- No glassmorphism or liquid-glass effects
+- No rainbow coloring
+- No neon palette
+- No purple-and-black startup theme
+- No decorative radial orbs
+- No dot-grid backgrounds
+- No sparkle icons
+- No emojis as interface icons
+- No floating ornaments
+- No excessive drop shadows
+- No generic three-feature-card marketing layout
+- No oversized landing-page hero inside the business application
+- No terminal-window decoration
+- No “It’s not X, it’s Y” marketing copy
+- No unnecessary hover animations or animated arrows
+- Avoid generic Lucide-icon-heavy styling; functional icons may be simple and restrained
+- Use flat charcoal, graphite, muted green, neutral borders, and strong typography
+- Use small corners rather than overly soft cards
+- Keep controls readable and touch-friendly
+- Use iOS-style twelve-line circular loaders for real asynchronous actions
+- Provide skeleton or clear progress states for longer loads
+- Use dedicated pages for operational forms; do not use modal dialogs for Add Product, Stock Movement, Supplier, Purchase Order, Customer, Invoice Detail, or Security DZ
+- Cancel, Close, and Back must always work even when required fields are empty
+- Use custom inline validation; never depend on browser validation bubbles
+- Replace native browser `<select>` presentation with accessible branded listboxes
+
+## Data integrity requirements
+
+- Use transactions for stock deductions, stock receiving, returns, and destructive multi-record operations.
+- Never allow stock quantities to become negative.
+- Never delete historical invoice line descriptions when a product is deleted.
+- Never consider an invoice archived until the second Firebase project confirms the write.
+- Use generated stable IDs for products, customers, suppliers, movements, purchases, returns, expenses, shifts, and audit records.
+- Escape user-controlled strings before injecting them into rendered HTML.
+- Normalize arrays that Firebase may return as objects.
+- Preserve valid existing data during migrations.
+- Do not silently fall back to mock or local demo data when cloud access fails.
+
+## Required deployment files
+
+`vercel.json`:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "buildCommand": "pnpm exec next build",
+  "installCommand": "pnpm install --frozen-lockfile"
+}
+```
+
+`package.json` must declare:
+
+```json
+{
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@11.25.0"
+}
+```
+
+## Acceptance requirements
+
+The work is complete only when:
+
+- The project is recognized as Next.js by Vercel.
+- `pnpm lint` passes.
+- `pnpm exec next build` passes.
+- Administrator login works with Firebase Authentication.
+- Unauthorized UIDs are rejected.
+- All application records are live in Realtime Database.
+- Adding, editing, and deleting products works.
+- Stock transactions update quantities correctly.
+- Checkout completes transactionally and generates a receipt.
+- Invoice records synchronize to the separate invoice project.
+- Customer profiles, balances, payments, history, and statement export work.
+- Purchases, expenses, profit, returns, reports, register shifts, and notifications use real saved data.
+- Security DZ safeguards work and no deletion happens before the complete confirmation flow.
+- Mobile and desktop interfaces are usable without clipped controls or horizontal page overflow.
+- No mock data appears after first login.

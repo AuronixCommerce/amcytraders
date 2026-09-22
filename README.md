@@ -19,6 +19,14 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Dedicated full-page product, stock movement, supplier, purchase-order, and invoice workflows with reliable Cancel and Back actions
 - Branded selection controls, inline validation, optional product metadata, and iOS-style activity indicators
 - Security DZ with JSON backup export and phrase + 10-second + final-approval safeguards for clearing selected realtime records
+- Dedicated customer accounts with credit limits, balances, payment history, linked invoices, and CSV statements
+- Cash register opening and closing, live daily profit, operating expenses, and date-based finance exports
+- Configurable tax, invoice numbering, and warehouse defaults
+- Reserved and damaged stock, barcodes, variants, batches, expiry dates, and warehouse tracking
+- Partial purchase receiving, supplier invoice references, and supplier payment balances
+- Item-level invoice returns with automatic stock restoration, refund tracking, and invoice-vault resync
+- Validated database restore plus automatic safety backup before every Security DZ deletion
+- Mobile developer handoff page at `/amcy/developer-prompt.html` with copy and plain-text download controls
 
 ## Development
 

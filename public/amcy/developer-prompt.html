@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>AMCY Trader · Developer Prompt</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#edf2ef;color:#102019;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{max-width:860px;margin:auto;padding:24px 16px 80px}.top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:16px}.eyebrow{font-size:11px;font-weight:800;letter-spacing:.12em;color:#527064}.top h1{margin:5px 0 5px;font-size:clamp(25px,6vw,38px);line-height:1.1}.top p{margin:0;color:#627169}.back{color:#244d3d;text-decoration:none;font-weight:750}.card{background:#fff;border:1px solid #dce5e0;border-radius:18px;overflow:hidden}.actions{position:sticky;top:0;z-index:3;display:flex;gap:10px;padding:13px;background:#102019;border-bottom:1px solid #24372f}.actions button,.actions a{min-height:46px;border:0;border-radius:11px;padding:0 17px;font:inherit;font-weight:800;text-decoration:none;display:grid;place-items:center;cursor:pointer}.copy{flex:1;background:#69e2b0;color:#0c1a15}.download{background:#24372f;color:#edf7f2}.status{padding:11px 16px;background:#e9f8f1;color:#266047;font-size:13px;font-weight:700}.prompt{margin:0;padding:20px;white-space:pre-wrap;word-break:break-word;font:13px/1.62 ui-monospace,SFMono-Regular,Menlo,monospace;color:#22312a}.loading{color:#73827a}@media(max-width:560px){.top{display:block}.back{display:inline-block;margin-top:13px}.shell{padding-top:17px}.actions{padding:10px}.actions button,.actions a{padding:0 12px;font-size:13px}.prompt{padding:16px;font-size:12px}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="top"><div><span class="eyebrow">HANDOFF DOCUMENT</span><h1>AMCY Trader master prompt</h1><p>Mobile-ready copy page for your human developer.</p></div><a class="back" href="./">← Back to app</a></header>
+    <section class="card">
+      <div class="actions"><button id="copy" class="copy">Copy complete prompt</button><a class="download" href="developer-prompt.txt" download>Download .txt</a></div>
+      <div id="status" class="status">Loading prompt…</div>
+      <pre id="prompt" class="prompt loading">Please wait.</pre>
+    </section>
+  </main>
+  <script>
+    let text='';const prompt=document.getElementById('prompt'),status=document.getElementById('status'),copy=document.getElementById('copy');
+    fetch('developer-prompt.txt').then(r=>{if(!r.ok)throw new Error('Prompt could not be loaded');return r.text()}).then(value=>{text=value;prompt.textContent=value;prompt.classList.remove('loading');status.textContent=`Ready · ${value.length.toLocaleString()} characters`;}).catch(error=>{prompt.textContent=error.message;status.textContent='Load failed. Use Download .txt instead.';});
+    copy.addEventListener('click',async()=>{if(!text)return;try{await navigator.clipboard.writeText(text);copy.textContent='Copied ✓';status.textContent='The complete prompt is on your clipboard.';setTimeout(()=>copy.textContent='Copy complete prompt',2200)}catch{const range=document.createRange();range.selectNodeContents(prompt);const selection=getSelection();selection.removeAllRanges();selection.addRange(range);status.textContent='Prompt selected. Tap Copy in the selection menu.';}});
+  </script>
+</body>
+</html>
