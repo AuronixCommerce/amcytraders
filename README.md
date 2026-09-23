@@ -19,7 +19,10 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Dedicated full-page product, stock movement, supplier, purchase-order, and invoice workflows with reliable Cancel and Back actions
 - Branded selection controls, inline validation, optional product metadata, and iOS-style activity indicators
 - Security DZ with JSON backup export and phrase + 10-second + final-approval safeguards for clearing selected realtime records
-- Dedicated customer accounts with credit limits, balances, payment history, linked invoices, and CSV statements
+- Session-locked customer workspace with an additional 8-digit access key and no customer details exposed before unlock
+- Dedicated customer accounts with credit limits, payment terms, risk ratings, account managers, balances, holds, payment history, linked invoices, and CSV statements
+- Credit-control dashboard with utilization, available facilities, overdue ageing, account status filters, and receivables export
+- Customer activity ledger with invoices, payments, manual debits and credits, due dates, notes, and downloadable account history
 - Cash register opening and closing, live daily profit, operating expenses, and date-based finance exports
 - Configurable tax, invoice numbering, and warehouse defaults
 - Reserved and damaged stock, barcodes, variants, batches, expiry dates, and warehouse tracking
