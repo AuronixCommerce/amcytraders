@@ -8,6 +8,7 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Firebase-issued JWT authentication with automatic refresh and a 180-day trusted-device session
 - Realtime inventory, suppliers, stock movements, purchase orders, and audit history
 - Premium customer checkout with product search, quantities, discount, payment type, cash received, and change due
+- Realtime quotation pipeline with full-page quote builder, configurable numbering, validity, status tracking, branded printing, CSV export, and one-click conversion to checkout
 - Transaction-safe stock deduction when a sale is completed
 - Print-ready branded receipts with customer details and invoice notes
 - Dedicated authenticated invoice vault in the `amcy-traders-invoices` Firebase project
@@ -24,7 +25,7 @@ High-end inventory, purchasing, customer checkout, and invoice software for AMCY
 - Credit-control dashboard with utilization, available facilities, overdue ageing, account status filters, and receivables export
 - Customer activity ledger with invoices, payments, manual debits and credits, due dates, notes, and downloadable account history
 - Cash register opening and closing, live daily profit, operating expenses, and date-based finance exports
-- Configurable tax, invoice numbering, and warehouse defaults
+- Configurable tax, invoice and quotation numbering, and warehouse defaults
 - Reserved and damaged stock, barcodes, variants, batches, expiry dates, and warehouse tracking
 - Partial purchase receiving, supplier invoice references, and supplier payment balances
 - Item-level invoice returns with automatic stock restoration, refund tracking, and invoice-vault resync

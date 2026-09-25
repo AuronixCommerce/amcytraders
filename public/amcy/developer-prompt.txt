@@ -137,6 +137,8 @@ businesses/{adminUid}
 │   ├── adminName
 │   ├── invoicePrefix
 │   ├── nextInvoiceNumber
+│   ├── quotePrefix
+│   ├── nextQuoteNumber
 │   ├── taxRate
 │   ├── defaultWarehouse
 │   └── dataVersion
@@ -146,6 +148,7 @@ businesses/{adminUid}
 ├── movements[]
 ├── purchases[]
 ├── sales[]
+├── quotes[]
 ├── returns[]
 ├── expenses[]
 ├── registers[]
@@ -172,6 +175,7 @@ Provide a responsive left navigation with:
 - Inventory
 - Stock movements
 - Point of sale
+- Quotations
 - Customers
 - Purchase orders
 - Suppliers
@@ -181,6 +185,20 @@ Provide a responsive left navigation with:
 - Security DZ
 
 Mobile navigation must have an obvious Close button. Every section must start at the correct top position without blank vertical space.
+
+## Dedicated quotation pipeline
+
+- Provide a full-page quotation register with search, status filtering, pipeline value, awaiting-response count, win rate, converted count, and CSV export.
+- Provide a full-page quote builder; do not use a popup or browser dialog.
+- Let the administrator select a saved customer or enter customer name, phone, and email manually.
+- Require only a customer name and at least one item. Allow product, quantity, editable unit price, discount, configured tax, validity date, reference, and terms.
+- Save draft, sent, accepted, declined, expired, and converted status in the main Realtime Database.
+- Expired status must be derived automatically for unaccepted draft or sent quotes after their validity date.
+- Generate configurable sequential quotation numbers independently from invoices.
+- Print a professional branded quotation containing customer details, validity, line items, totals, and terms.
+- Convert an eligible quote into the point-of-sale checkout with its customer, items, quoted prices, and discount preserved.
+- Conversion must recheck current stock and only mark the quotation converted after the invoice transaction succeeds.
+- Save the linked quotation ID on the invoice and the linked invoice ID on the quotation.
 
 ## Dedicated customer-management module
 
@@ -433,7 +451,7 @@ Use a serious, compact business-operations visual language.
 - Keep controls readable and touch-friendly
 - Use iOS-style twelve-line circular loaders for real asynchronous actions
 - Provide skeleton or clear progress states for longer loads
-- Use dedicated pages for operational forms; do not use modal dialogs for Add Product, Stock Movement, Supplier, Purchase Order, Customer, Invoice Detail, or Security DZ
+- Use dedicated pages for operational forms; do not use modal dialogs for Add Product, Stock Movement, Supplier, Purchase Order, Quotation, Customer, Invoice Detail, or Security DZ
 - Cancel, Close, and Back must always work even when required fields are empty
 - Use custom inline validation; never depend on browser validation bubbles
 - Replace native browser `<select>` presentation with accessible branded listboxes
@@ -493,4 +511,3 @@ The work is complete only when:
 - Security DZ safeguards work and no deletion happens before the complete confirmation flow.
 - Mobile and desktop interfaces are usable without clipped controls or horizontal page overflow.
 - No mock data appears after first login.
-

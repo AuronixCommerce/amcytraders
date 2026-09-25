@@ -57,6 +57,7 @@
         <button data-view="movements"><span data-icon="swap"></span>Stock movements</button>
         <p>OPERATIONS</p>
         <button data-view="sales"><span data-icon="receipt"></span>Point of sale</button>
+        <button data-view="quotes"><span data-icon="receipt"></span>Quotations</button>
         <button data-view="customers"><span data-icon="users"></span>Customers</button>
         <button data-view="customer-credit"><span data-icon="chart"></span>Credit control</button>
         <button data-view="customer-activity"><span data-icon="history"></span>Account activity</button>
@@ -131,6 +132,13 @@
         <article class="panel table-panel sales-history"><div class="table-caption"><div><h3>Invoice vault</h3><p>Search, inspect, reprint, and verify every completed sale.</p></div></div><div class="sales-command"><div class="searchbox"><span>⌕</span><input id="salesSearch" placeholder="Search invoice, customer, phone or item…"></div><select id="salesPaymentFilter"><option value="all">All payment methods</option><option>Cash</option><option>Bank transfer</option><option>Card</option><option>Credit</option></select><div class="sales-metric"><span>Invoices<b id="salesCount">0</b></span><span>Revenue<b id="salesRevenue">PKR 0</b></span></div></div><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Items</th><th>Payment</th><th>Total</th><th>Date</th><th></th></tr></thead><tbody id="salesTable"></tbody></table></div></article>
       </section>
 
+      <section id="view-quotes" class="view quotes-view">
+        <div class="quote-hero"><div><span class="eyebrow">SALES PIPELINE</span><h2>Quotations</h2><p>Price opportunities, follow approvals, and turn accepted quotes into invoices.</p></div><button class="primary-btn" data-open="quote">＋ New quotation</button></div>
+        <div id="quoteMetrics" class="quote-metrics"></div>
+        <div class="section-tools"><div class="searchbox"><span>⌕</span><input id="quoteSearch" placeholder="Search quote, customer, phone or item…"></div><select id="quoteStatusFilter"><option value="all">All quotations</option><option value="draft">Draft</option><option value="sent">Sent</option><option value="accepted">Accepted</option><option value="declined">Declined</option><option value="expired">Expired</option><option value="converted">Converted</option></select><button id="exportQuotes" class="ghost-btn">Export pipeline</button><button class="primary-btn" data-open="quote">＋ New quotation</button></div>
+        <article class="panel table-panel"><div class="table-caption"><div><h3>Quote register</h3><p id="quoteCount">0 quotations</p></div></div><div class="table-wrap"><table><thead><tr><th>Quotation</th><th>Customer</th><th>Items</th><th>Value</th><th>Valid until</th><th>Status</th><th></th></tr></thead><tbody id="quotesTable"></tbody></table></div></article>
+      </section>
+
       <section id="view-customer-access" class="view customer-access-view">
         <div class="customer-access-shell"><div class="access-lock-mark" aria-hidden="true">⌁</div><span class="eyebrow">RESTRICTED CUSTOMER RECORDS</span><h2>Enter customer access key</h2><p>This area contains customer contacts, credit limits, balances, payments, and account statements.</p><form id="customerAccessForm" novalidate><label>8-digit access key<div class="access-key-input"><input id="customerAccessKey" type="password" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="••••••••"><button id="toggleCustomerKey" type="button">Show</button></div><small id="customerAccessError" class="field-error"></small></label><button class="primary-btn full" type="submit">Unlock customer accounts</button></form><div class="access-security-note"><b>Two-layer protection</b><span>Firebase administrator authentication remains required before this key can be used.</span></div></div>
       </section>
@@ -181,6 +189,7 @@
           <div class="security-dz-intro"><strong>Destructive database controls</strong><p>Deletion cannot be undone. Each control requires its own confirmation phrase, a 10-second safety timer, and final approval.</p></div>
           <div id="dangerActionGrid" class="danger-action-grid">
             <button data-danger-scope="invoices"><span>Invoices</span><b id="dangerCountInvoices">0 records</b><small>Main sales history and separate invoice vault</small></button>
+            <button data-danger-scope="quotes"><span>Quotations</span><b id="dangerCountQuotes">0 records</b><small>Sales quotations and conversion history</small></button>
             <button data-danger-scope="purchases"><span>Purchases</span><b id="dangerCountPurchases">0 records</b><small>All purchase orders</small></button>
             <button data-danger-scope="movements"><span>Movements</span><b id="dangerCountMovements">0 records</b><small>Entire stock movement ledger</small></button>
             <button data-danger-scope="products"><span>Products</span><b id="dangerCountProducts">0 records</b><small>Active product inventory</small></button>
@@ -188,7 +197,7 @@
             <button data-danger-scope="customers"><span>Customers</span><b id="dangerCountCustomers">0 records</b><small>Profiles and payment history</small></button>
             <button data-danger-scope="expenses"><span>Expenses</span><b id="dangerCountExpenses">0 records</b><small>Operating expense ledger</small></button>
             <button data-danger-scope="audit"><span>Audit history</span><b id="dangerCountAudit">0 records</b><small>Administrative event history</small></button>
-            <button data-danger-scope="workspace" class="danger-action-critical"><span>Operational database</span><b>Clear everything</b><small>Products, suppliers, movements, orders, invoices and invoice vault</small></button>
+            <button data-danger-scope="workspace" class="danger-action-critical"><span>Operational database</span><b>Clear everything</b><small>Products, suppliers, movements, orders, quotes, invoices and invoice vault</small></button>
           </div>
           <section id="dangerConfirmation" class="danger-confirmation hidden" aria-live="polite">
             <div class="danger-confirmation-head"><div><span class="eyebrow">SELECTED ACTION</span><h3 id="dangerActionTitle">Clear records</h3></div><button type="button" id="cancelDangerAction" class="ghost-btn">Cancel</button></div>
@@ -205,7 +214,7 @@
 
       <section id="view-settings" class="view">
         <div class="settings-layout"><aside><button class="active">Business profile</button><button>Cloud connection</button><button>Preferences</button><button>Security</button></aside><div>
-          <article class="panel settings-card"><span class="eyebrow">BUSINESS PROFILE</span><h3>Company information</h3><div class="form-grid"><label>Business name<input id="businessName" value="AMCY Trader"></label><label>Base currency<select id="currencySetting"><option>PKR</option><option>USD</option><option>AED</option><option>EUR</option></select></label><label>Default location<input id="locationSetting" value="Main Warehouse"></label><label>Admin display name<input id="nameSetting" value="Admin User"></label><label>Invoice prefix<input id="invoicePrefixSetting" maxlength="8" placeholder="INV"></label><label>Next invoice number<input id="nextInvoiceSetting" type="number" min="1"></label><label>Sales tax rate (%)<input id="taxRateSetting" type="number" min="0" max="100" step="0.01"></label><label>Default warehouse<input id="warehouseSetting" placeholder="Main Warehouse"></label></div><button class="primary-btn" id="saveProfile">Save changes</button></article>
+          <article class="panel settings-card"><span class="eyebrow">BUSINESS PROFILE</span><h3>Company information</h3><div class="form-grid"><label>Business name<input id="businessName" value="AMCY Trader"></label><label>Base currency<select id="currencySetting"><option>PKR</option><option>USD</option><option>AED</option><option>EUR</option></select></label><label>Default location<input id="locationSetting" value="Main Warehouse"></label><label>Admin display name<input id="nameSetting" value="Admin User"></label><label>Invoice prefix<input id="invoicePrefixSetting" maxlength="8" placeholder="INV"></label><label>Next invoice number<input id="nextInvoiceSetting" type="number" min="1"></label><label>Quotation prefix<input id="quotePrefixSetting" maxlength="8" placeholder="QT"></label><label>Next quotation number<input id="nextQuoteSetting" type="number" min="1"></label><label>Sales tax rate (%)<input id="taxRateSetting" type="number" min="0" max="100" step="0.01"></label><label>Default warehouse<input id="warehouseSetting" placeholder="Main Warehouse"></label></div><button class="primary-btn" id="saveProfile">Save changes</button></article>
           <article class="panel settings-card firebase-card"><div class="firebase-heading"><div><span class="eyebrow">AMCY CLOUD</span><h3>Cloud connection</h3></div><span id="firebaseStatus" class="status-pill warning">Connecting</span></div><p>Your inventory workspace securely synchronizes products, suppliers, invoices, orders, and stock movements across authorized sessions.</p><div class="cloud-details"><div><span>Access</span><b>Administrator only</b></div><div><span>Workspace</span><b>AMCY Trader</b></div><div><span>Data service</span><b>Realtime synchronization</b></div><div><span>Storage</span><b>Live database only</b></div></div><p class="security-note">ⓘ Live records are restricted to the authorized AMCY Trader administrator account.</p><a class="ghost-btn prompt-page-link" href="developer-prompt.html" target="_blank" rel="noopener">Open developer prompt</a></article>
         </div></div>
       </section>
@@ -218,6 +227,23 @@
       <section id="view-customer-detail" class="view customer-detail-view">
         <div class="workflow-head"><button type="button" class="back-btn" data-back="customers">← Customers</button><div><span class="eyebrow">CUSTOMER ACCOUNT</span><h2 id="customerDetailTitle">Customer profile</h2><p id="customerDetailSubtitle">Account history and credit position.</p></div></div>
         <div id="customerDetailContent"></div>
+      </section>
+
+      <section id="view-quote-editor" class="view workflow-view quote-editor-view">
+        <div class="workflow-head"><button type="button" class="back-btn" data-back="quotes">← Quotations</button><div><span class="eyebrow">SALES QUOTATION</span><h2 id="quoteEditorTitle">New quotation</h2><p>Build an itemized offer without changing stock. Only the customer name and one item are required.</p></div></div>
+        <form id="quoteForm" class="quote-builder" novalidate>
+          <article class="panel quote-builder-main"><div class="panel-head"><div><span class="eyebrow">CUSTOMER & VALIDITY</span><h3>Quote details</h3></div></div><div class="form-grid"><label>Saved customer <em>Optional</em><select id="quoteCustomerId"><option value="">Choose manually</option></select></label><label>Valid until<input id="quoteValidUntil" type="date"></label><label>Customer name <b>Required</b><input id="quoteCustomerName" placeholder="Customer or company"><small class="field-error" data-error-for="quoteCustomerName"></small></label><label>Phone <em>Optional</em><input id="quoteCustomerPhone" autocomplete="tel"></label><label>Email <em>Optional</em><input id="quoteCustomerEmail" type="email"><small class="field-error" data-error-for="quoteCustomerEmail"></small></label><label>Reference <em>Optional</em><input id="quoteReference" placeholder="Enquiry, project, or tender reference"></label></div>
+          <div class="quote-line-entry"><label>Product<select id="quoteProduct"><option value="">Select a product</option></select></label><label>Quantity<input id="quoteQty" type="number" min="1" value="1"></label><label>Unit price<input id="quoteUnitPrice" type="number" min="0" step="0.01" placeholder="0"></label><button id="addQuoteItem" type="button" class="primary-btn">Add item</button></div><small id="quoteItemError" class="field-error"></small>
+          <div id="quoteItems" class="quote-items"></div>
+          <label class="quote-notes">Terms and notes <em>Optional</em><textarea id="quoteNotes" rows="4" placeholder="Delivery, payment, warranty, or validity conditions"></textarea></label>
+          </article>
+          <aside class="panel quote-builder-summary"><span class="eyebrow">PRICING</span><h3>Quotation total</h3><label>Discount amount<input id="quoteDiscount" type="number" min="0" step="0.01" value="0"></label><label class="quote-tax-toggle"><input id="quoteTaxEnabled" type="checkbox" checked><span>Apply configured tax (<b id="quoteTaxRateLabel">0%</b>)</span></label><div class="quote-total-lines"><div><span>Subtotal</span><b id="quoteSubtotal">PKR 0</b></div><div><span>Discount</span><b id="quoteDiscountTotal">PKR 0</b></div><div><span>Tax</span><b id="quoteTaxTotal">PKR 0</b></div><div class="grand"><span>Grand total</span><strong id="quoteGrandTotal">PKR 0</strong></div></div><div id="quoteFormError" class="form-error"></div><div class="quote-save-actions"><button type="button" class="ghost-btn" data-back="quotes">Cancel</button><button type="submit" class="primary-btn">Save quotation</button></div></aside>
+        </form>
+      </section>
+
+      <section id="view-quote-detail" class="view workflow-view quote-detail-view">
+        <div class="workflow-head"><button type="button" class="back-btn" data-back="quotes">← Quotations</button><div><span class="eyebrow">QUOTATION RECORD</span><h2 id="quoteDetailTitle">Quotation</h2><p id="quoteDetailSubtitle">Review pricing and customer response.</p></div></div>
+        <div id="quoteDetailBody"></div>
       </section>
 
       <section id="view-product-editor" class="view workflow-view">
@@ -246,7 +272,7 @@
     </main>
   </div>
 
-  <div id="searchOverlay" class="search-overlay hidden"><div class="command-box"><div><span>⌕</span><input id="globalSearch" placeholder="Search products, suppliers, or orders…"><kbd>ESC</kbd></div><div id="searchResults" class="search-results"></div></div></div>
+  <div id="searchOverlay" class="search-overlay hidden"><div class="command-box"><div><span>⌕</span><input id="globalSearch" placeholder="Search products, quotations, invoices, or orders…"><kbd>ESC</kbd></div><div id="searchResults" class="search-results"></div></div></div>
 
   <div id="toastContainer" class="toast-container"></div>
   <script type="module" src="app.js"></script>
