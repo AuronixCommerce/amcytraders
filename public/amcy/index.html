@@ -83,6 +83,7 @@
           <button class="primary-btn" data-open="movement"><span>＋</span> Stock movement</button>
         </div>
       </header>
+      <div id="offlineBanner" class="offline-banner hidden" role="status"><div><b>Offline workspace</b><span>Your changes are stored on this device and will sync automatically.</span></div><strong id="offlinePendingLabel">No pending changes</strong></div>
 
       <section id="view-dashboard" class="view active">
         <div class="attention-strip" id="attentionStrip"><div><span class="pulse"></span><b><span id="attentionCount">0</span> items need attention</b><small>Review low and out-of-stock products before the next order cycle.</small></div><button data-view-jump="inventory">Review inventory →</button></div>
@@ -130,7 +131,18 @@
             <button id="completeSale" class="primary-btn full checkout-button"><span>Charge & print receipt</span><span>→</span></button>
           </article>
         </div>
-        <article class="panel table-panel sales-history"><div class="table-caption"><div><h3>Invoice vault</h3><p>Search, inspect, reprint, and verify every completed sale.</p></div></div><div class="sales-command"><div class="searchbox"><span>⌕</span><input id="salesSearch" placeholder="Search invoice, customer, phone or item…"></div><select id="salesPaymentFilter"><option value="all">All payment methods</option><option>Cash</option><option>Bank transfer</option><option>Card</option><option>Credit</option></select><div class="sales-metric"><span>Invoices<b id="salesCount">0</b></span><span>Revenue<b id="salesRevenue">PKR 0</b></span></div></div><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Items</th><th>Payment</th><th>Total</th><th>Date</th><th></th></tr></thead><tbody id="salesTable"></tbody></table></div></article>
+        <article class="panel table-panel sales-history"><div class="table-caption"><div><h3>Invoice vault</h3><p>Search, inspect, reprint, and verify every completed sale.</p></div></div><div id="invoiceVaultBanner" class="vault-banner hidden"><div><b>Invoice vault connection required</b><span>Connect the protected invoice archive before syncing pending records.</span></div><button id="openInvoiceVaultAccess" class="ghost-btn">Connect vault</button></div><div class="sales-command"><div class="searchbox"><span>⌕</span><input id="salesSearch" placeholder="Search invoice, customer, phone or item…"></div><select id="salesPaymentFilter"><option value="all">All payment methods</option><option>Cash</option><option>Bank transfer</option><option>Card</option><option>Credit</option></select><div class="sales-metric"><span>Invoices<b id="salesCount">0</b></span><span>Revenue<b id="salesRevenue">PKR 0</b></span></div></div><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Customer</th><th>Items</th><th>Payment</th><th>Total</th><th>Date</th><th></th></tr></thead><tbody id="salesTable"></tbody></table></div></article>
+      </section>
+
+      <section id="view-invoice-vault-access" class="view workflow-view">
+        <div class="workflow-head"><button type="button" class="back-btn" data-back="sales">← Point of sale</button><div><span class="eyebrow">SECURE INVOICE ARCHIVE</span><h2>Connect invoice vault</h2><p>Use the same administrator password. If the separate vault account does not exist yet, AMCY Trader will create it after verifying the main administrator session.</p></div></div>
+        <form id="invoiceVaultAccessForm" class="panel workflow-card" novalidate>
+          <label>Administrator email<input id="invoiceVaultEmail" type="email" autocomplete="username" readonly></label>
+          <label>Administrator password<input id="invoiceVaultPassword" type="password" autocomplete="current-password" placeholder="Enter the same admin password"><small id="invoiceVaultPasswordError" class="field-error"></small></label>
+          <div id="invoiceVaultAccessError" class="form-error" role="alert"></div>
+          <div class="vault-security-note"><b>Separate encrypted session</b><span>This password is sent directly to the invoice authentication service and is never stored by AMCY Trader.</span></div>
+          <div class="workflow-actions"><button type="button" class="ghost-btn" data-back="sales">Cancel</button><button class="primary-btn" type="submit">Connect invoice vault</button></div>
+        </form>
       </section>
 
       <section id="view-quotes" class="view quotes-view">
@@ -276,6 +288,6 @@
   <div id="searchOverlay" class="search-overlay hidden"><div class="command-box"><div><span>⌕</span><input id="globalSearch" placeholder="Search products, quotations, invoices, or orders…"><kbd>ESC</kbd></div><div id="searchResults" class="search-results"></div></div></div>
 
   <div id="toastContainer" class="toast-container"></div>
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20260927-2"></script>
 </body>
 </html>

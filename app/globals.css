@@ -145,16 +145,18 @@ body {
 
 .amcy-frame-shell {
   position: relative;
-  width: 100vw;
+  width: 100%;
+  min-width: 0;
   height: 100dvh;
+  min-height: 100svh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 20%, rgba(43, 170, 111, 0.16), transparent 38%),
-    #07100d;
+  background: #0b0e0d;
 }
 
 .amcy-app-frame {
+  display: block;
   width: 100%;
+  min-width: 0;
   height: 100%;
   border: 0;
   opacity: 0;
@@ -186,9 +188,8 @@ body {
   margin-bottom: 22px;
   place-items: center;
   border: 1px solid rgba(116, 240, 172, 0.24);
-  border-radius: 17px;
-  background: linear-gradient(145deg, #2baa6f, #17764b);
-  box-shadow: 0 18px 48px rgba(22, 118, 75, 0.36);
+  border-radius: 0;
+  background: #17211c;
   color: white;
   font-size: 25px;
   font-weight: 800;

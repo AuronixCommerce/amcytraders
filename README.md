@@ -47,6 +47,17 @@ For a production build:
 pnpm build
 ```
 
+## Windows desktop app
+
+AMCY Trader includes an Electron desktop edition using the same authenticated realtime workspace. After one successful online login, it caches the operational database on the device. The app can open and record changes without a connection, marks them as pending, and uploads the device snapshot automatically when connectivity returns.
+
+```bash
+pnpm desktop:dev
+pnpm desktop:build
+```
+
+The Windows build produces a portable executable and an NSIS installer in `release/`. Offline access keeps the same six-month trusted-device deadline. A first-time login and invoice-vault provisioning require an internet connection.
+
 ## Firebase
 
 1. Enable Email/Password in Firebase Authentication.

@@ -1,10 +1,6 @@
 {
   "rules": {
-    "businesses": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'",
-        ".write": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3' && $uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'"
-      }
-    }
+    ".read": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'",
+    ".write": "auth != null && auth.uid === 'sAYmgRLwq4g1MIYQPRrT5CeiqJB3'"
   }
 }

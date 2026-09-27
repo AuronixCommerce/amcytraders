@@ -5,6 +5,10 @@ const SESSION_EXPIRES_KEY = 'amcy_admin_session_expires_at';
 const SESSION_DURATION_MS = 180 * 24 * 60 * 60 * 1000;
 const CUSTOMER_ACCESS_SESSION_KEY = 'amcy_customer_access_granted';
 const CUSTOMER_ACCESS_HASH = '4060b80f785f9c87b775ba2aa16360c04b47b93f056c5bf234a47c3d6506e118';
+const LOCAL_STATE_KEY = 'amcy_offline_state_v4';
+const LOCAL_PENDING_KEY = 'amcy_offline_pending_v4';
+const LOCAL_ADMIN_EMAIL_KEY = 'amcy_offline_admin_email';
+const LOCAL_VAULT_CLEAR_KEY = 'amcy_offline_clear_invoice_vault';
 const DEFAULT_FIREBASE_CONFIG = {
   apiKey: 'AIzaSyB8AYL6JYpKJYxtS_1EsEMpMFdrjYIM06k',
   authDomain: 'amcy-traders.firebaseapp.com',
@@ -59,6 +63,7 @@ let currentUser = null;
 let invoiceUser = null;
 let cloudOnline = false;
 let invoiceCloudOnline = false;
+let pendingInvoiceSyncId = '';
 let syncWarningShown = false;
 let stopRealtime = null;
 let cart = [];
@@ -66,6 +71,7 @@ let quoteCart = [];
 let editingQuoteId = '';
 let activeQuoteId = '';
 let checkoutTaxRateOverride = null;
+let offlineSyncing = false;
 
 const money = n => `${state.profile.currency || 'PKR'} ${Number(n||0).toLocaleString('en-PK',{maximumFractionDigits:0})}`;
 const uid = p => `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`;
@@ -83,7 +89,7 @@ const formatDate = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'sh
 const formatTime = v => new Intl.DateTimeFormat('en-PK',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(v));
 const sessionExpiry = () => Number(localStorage.getItem(SESSION_EXPIRES_KEY)||0);
 const beginTrustedSession = () => localStorage.setItem(SESSION_EXPIRES_KEY,String(Date.now()+SESSION_DURATION_MS));
-const clearTrustedSession = () => localStorage.removeItem(SESSION_EXPIRES_KEY);
+const clearTrustedSession = () => {localStorage.removeItem(SESSION_EXPIRES_KEY);localStorage.removeItem(LOCAL_ADMIN_EMAIL_KEY);};
 const trustedSessionExpired = () => sessionExpiry()>0&&Date.now()>=sessionExpiry();
 async function enforceTrustedSessionDeadline(){if(!currentUser||!trustedSessionExpired())return;clearTrustedSession();if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);await firebase.signOut(firebase.auth);}
 setInterval(enforceTrustedSessionDeadline,5*60*1000);
@@ -124,20 +130,53 @@ function enhanceSelect(select){
 function refreshCustomSelects(){$$('select').forEach(select=>{enhanceSelect(select);select._refreshCustom?.();});}
 document.addEventListener('click',event=>{if(event.target.closest('.custom-select'))return;$$('.custom-select-menu').forEach(x=>x.classList.add('hidden'));$$('.custom-select-button').forEach(x=>x.setAttribute('aria-expanded','false'));});
 
+function cachedState(){try{return normalizeState(JSON.parse(localStorage.getItem(LOCAL_STATE_KEY)||'null'));}catch{return null;}}
+function hasCachedState(){return !!localStorage.getItem(LOCAL_STATE_KEY);}
+function hasPendingOfflineChanges(){return localStorage.getItem(LOCAL_PENDING_KEY)==='true';}
+function cacheState({pending=false}={}){
+  localStorage.setItem(LOCAL_STATE_KEY,JSON.stringify(state));
+  if(pending)localStorage.setItem(LOCAL_PENDING_KEY,'true');
+  updateSync();
+}
+function clearPendingOfflineChanges(){localStorage.removeItem(LOCAL_PENDING_KEY);}
+function isConnectivityError(error){return !navigator.onLine||['unavailable','network-request-failed','disconnected'].some(code=>String(error?.code||error?.message||'').toLowerCase().includes(code));}
+function liveDataErrorMessage(error,user){
+  const code=String(error?.code||'unknown').replace(/^database\//,'');
+  console.error('AMCY live data connection failed',{code,message:error?.message,uid:user?.uid,project:DEFAULT_FIREBASE_CONFIG.projectId,databaseURL:DEFAULT_FIREBASE_CONFIG.databaseURL});
+  if(code.includes('permission-denied'))return `Database access denied for admin UID ${user?.uid||'unknown'}. Publish the MAIN amcy-traders RTDB rules, then reload.`;
+  if(code.includes('app-check'))return 'Database access was blocked by App Check. Disable Realtime Database enforcement for this web app or register its App Check provider.';
+  return `Live database connection failed (${code}). Reload and try again.`;
+}
+function offlineResult(next){
+  if(next===undefined)return{committed:false,snapshot:{val:()=>state},offline:true};
+  state=normalizeState(next);cloudOnline=false;cacheState({pending:true});renderAll();
+  return{committed:true,snapshot:{val:()=>state},offline:true};
+}
+async function runBusinessTransaction(mutator){
+  if(mode==='firebase'&&firebase&&currentUser?.uid===ADMIN_UID&&navigator.onLine){
+    try{
+      const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),result=await firebase.runTransaction(root,current=>mutator(normalizeState(current)),{applyLocally:false});
+      if(result.committed){state=normalizeState(result.snapshot.val());cloudOnline=true;cacheState();}
+      return result;
+    }catch(error){if(!isConnectivityError(error))throw error;}
+  }
+  const local=normalizeState(JSON.parse(JSON.stringify(state)));return offlineResult(mutator(local));
+}
 async function persist(){
   if(mode==='firebase' && firebase && currentUser?.uid===ADMIN_UID){
-    try{await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);cloudOnline=true;return;}
-    catch(error){console.error(error);cloudOnline=false;if(!syncWarningShown){syncWarningShown=true;toast('Live sync failed. No changes were saved. Please retry.','error');}updateSync();throw error;}
+    try{if(!navigator.onLine)throw Object.assign(new Error('offline'),{code:'disconnected'});await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);cloudOnline=true;syncWarningShown=false;cacheState();return;}
+    catch(error){if(!isConnectivityError(error))throw error;console.error(error);cloudOnline=false;cacheState({pending:true});if(!syncWarningShown){syncWarningShown=true;toast('Working offline. Changes are saved on this device.','error');}updateSync();return;}
   }
-  throw new Error('Live database connection required');
+  if(currentUser?.uid===ADMIN_UID){cloudOnline=false;cacheState({pending:true});return;}
+  throw new Error('Administrator session required');
 }
 async function addAudit(action,detail){state.audit.unshift({id:uid('a'),action,detail,createdAt:new Date().toISOString(),user:state.profile.adminName||'Admin User'});await persist();}
 
 async function bootFirebase(config){
   try{
-    const appMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js');
-    const authMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-auth.js');
-    const dbMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-database.js');
+    let appMod,authMod,dbMod;
+    try{const bundled=await import('./firebase-bundle.js');appMod=bundled;authMod=bundled;dbMod=bundled;}
+    catch(bundleError){console.warn('Local Firebase SDK unavailable, using network SDK',bundleError);appMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-app.js');authMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-auth.js');dbMod=await import('https://www.gstatic.com/firebasejs/11.3.1/firebase-database.js');}
     const app=appMod.initializeApp(config,`amcy-${Date.now()}`);
     const auth=authMod.getAuth(app), db=dbMod.getDatabase(app);
     firebase={...authMod,...dbMod,auth,db}; mode='firebase';
@@ -146,6 +185,49 @@ async function bootFirebase(config){
     invoiceFirebase={...authMod,...dbMod,auth:invoiceAuth,db:invoiceDb};
     return true;
   }catch(e){ console.error(e); mode='offline'; cloudOnline=false; return false; }
+}
+
+async function syncOfflineChanges(){
+  if(offlineSyncing||!navigator.onLine||!firebase||currentUser?.uid!==ADMIN_UID)return;
+  offlineSyncing=true;updateSync();
+  try{
+    if(hasPendingOfflineChanges()){
+      const local=cachedState();if(local){state=local;await firebase.set(firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),state);clearPendingOfflineChanges();cacheState();}
+    }
+    if(localStorage.getItem(LOCAL_VAULT_CLEAR_KEY)==='true'&&invoiceFirebase&&invoiceUser){await clearInvoiceVault();localStorage.removeItem(LOCAL_VAULT_CLEAR_KEY);}
+    if(invoiceFirebase&&invoiceUser){for(const sale of state.sales.filter(item=>item.invoiceArchiveStatus!=='synced')){try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);}catch(error){console.error('Pending invoice archive failed',error);break;}}}
+    cloudOnline=true;syncWarningShown=false;renderAll();toast('Offline changes synced');
+  }catch(error){console.error('Offline sync failed',error);cloudOnline=false;updateSync();}
+  finally{offlineSyncing=false;updateSync();}
+}
+
+async function connectInvoiceVault(email,password,{createIfMissing=false}={}){
+  if(!invoiceFirebase)throw new Error('Invoice vault service is unavailable. Reload and try again.');
+  await invoiceFirebase.setPersistence(invoiceFirebase.auth,invoiceFirebase.browserLocalPersistence);
+  try{
+    const credential=await invoiceFirebase.signInWithEmailAndPassword(invoiceFirebase.auth,email,password);
+    invoiceUser=credential.user;invoiceCloudOnline=true;return credential.user;
+  }catch(error){
+    const canProvision=createIfMissing&&['auth/invalid-credential','auth/user-not-found'].includes(error?.code);
+    if(!canProvision)throw error;
+    try{
+      const credential=await invoiceFirebase.createUserWithEmailAndPassword(invoiceFirebase.auth,email,password);
+      invoiceUser=credential.user;invoiceCloudOnline=true;return credential.user;
+    }catch(createError){
+      if(createError?.code==='auth/email-already-in-use')throw Object.assign(new Error('The invoice vault account already exists with a different password. Reset that account password or use its matching password.'),{code:createError.code});
+      throw createError;
+    }
+  }
+}
+
+function openInvoiceVaultAccess(invoiceId=''){
+  pendingInvoiceSyncId=invoiceId||pendingInvoiceSyncId;
+  $('#invoiceVaultEmail').value=currentUser?.email||'';
+  $('#invoiceVaultPassword').value='';
+  $('#invoiceVaultPasswordError').textContent='';
+  $('#invoiceVaultAccessError').textContent='';
+  go('invoice-vault-access');
+  setTimeout(()=>$('#invoiceVaultPassword').focus(),0);
 }
 
 async function init(){
@@ -158,9 +240,10 @@ async function init(){
       if(user?.uid===ADMIN_UID){
         if(trustedSessionExpired()){clearTrustedSession();currentUser=null;if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='Your trusted-device session expired after 6 months. Please sign in again.';return;}
         if(!sessionExpiry())beginTrustedSession();
-        currentUser=user;try{await user.getIdToken();await loadFirebaseData();showApp();}catch{showAuth();$('#loginError').textContent='Signed in, but live data access was denied. Publish the database rules and reload.';}
+        currentUser=user;localStorage.setItem(LOCAL_ADMIN_EMAIL_KEY,user.email||'');try{await user.getIdToken(true);await loadFirebaseData();showApp();await syncOfflineChanges();}catch(error){state=hasCachedState()?cachedState():blankState();cloudOnline=false;cacheState();showApp();renderAll();console.error(liveDataErrorMessage(error,user));setTimeout(()=>toast('Cloud data is unavailable. Offline workspace opened and will reconnect automatically.','error'),300);}
       }
       else if(user){currentUser=null;await firebase.signOut(firebase.auth);showAuth();$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';}
+      else if(!navigator.onLine&&hasCachedState()&&!trustedSessionExpired()&&sessionExpiry()>0&&localStorage.getItem(LOCAL_ADMIN_EMAIL_KEY)){currentUser={uid:ADMIN_UID,email:localStorage.getItem(LOCAL_ADMIN_EMAIL_KEY)};state=cachedState();cloudOnline=false;showApp();renderAll();}
       else showAuth();
     });
     updateSync(); return;
@@ -170,12 +253,14 @@ async function init(){
 async function loadFirebaseData(){
   const businessRef=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);
   try{
+    if(hasPendingOfflineChanges()){const local=cachedState();if(local){state=local;await firebase.set(businessRef,state);clearPendingOfflineChanges();cacheState();}}
     const snap=await firebase.get(businessRef);let raw=snap.exists()?snap.val():null;
     if(!raw||isOriginalMockData(raw)){state=blankState();await firebase.set(businessRef,state);}
     else{state=normalizeState(raw);if(state.profile.dataVersion!==4){state.profile.dataVersion=4;await firebase.set(businessRef,state);}}
     cloudOnline=true;syncWarningShown=false;
     if(stopRealtime)stopRealtime();
-    stopRealtime=firebase.onValue(businessRef,next=>{state=normalizeState(next.val());cloudOnline=true;syncWarningShown=false;renderAll();},error=>{console.error(error);cloudOnline=false;updateSync();toast('Realtime connection lost. Reconnecting…','error');});
+    cacheState();
+    stopRealtime=firebase.onValue(businessRef,next=>{if(hasPendingOfflineChanges())return;state=normalizeState(next.val());cloudOnline=true;syncWarningShown=false;cacheState();renderAll();},error=>{console.error(error);cloudOnline=false;updateSync();toast('Realtime connection lost. Working from this device.','error');});
   }catch(error){console.error(error);cloudOnline=false;throw error;}
 }
 function showAuth(){$('#authScreen').classList.remove('hidden');$('#app').classList.add('hidden')}
@@ -185,9 +270,11 @@ function showApp(){
   renderAll();
 }
 function updateSync(){
-  const signedIn=mode==='firebase'&&currentUser?.uid===ADMIN_UID,live=signedIn&&cloudOnline;
-  $('#syncLabel').textContent=live?'AMCY Cloud':signedIn?'Reconnecting…':'Secure workspace';$('#syncSub').textContent=live?'Realtime sync active':signedIn?'Live data unavailable':'Sign in required';
+  const signedIn=currentUser?.uid===ADMIN_UID,live=signedIn&&cloudOnline;
+  const pending=hasPendingOfflineChanges();
+  $('#syncLabel').textContent=offlineSyncing?'Syncing changes…':live?'AMCY Cloud':signedIn?'Offline workspace':'Secure workspace';$('#syncSub').textContent=offlineSyncing?'Uploading local records':live?'Realtime sync active':signedIn?(pending?'Changes pending sync':'Device cache active'):'Sign in required';
   $('#firebaseStatus').textContent=live?'Connected':signedIn?'Reconnecting':'Ready';$('#firebaseStatus').className=`status-pill ${live?'healthy':'warning'}`;
+  $('#offlineBanner')?.classList.toggle('hidden',live||!signedIn);if($('#offlinePendingLabel'))$('#offlinePendingLabel').textContent=pending?'Changes pending sync':'Device cache active';
 }
 
 $('#loginForm').addEventListener('submit',async e=>{
@@ -202,9 +289,9 @@ $('#loginForm').addEventListener('submit',async e=>{
     await Promise.all([firebase.setPersistence(firebase.auth,firebase.browserLocalPersistence),invoiceFirebase.setPersistence(invoiceFirebase.auth,invoiceFirebase.browserLocalPersistence)]);
     const credential=await firebase.signInWithEmailAndPassword(firebase.auth,email,password);
     if(credential.user.uid!==ADMIN_UID){await firebase.signOut(firebase.auth);$('#loginError').textContent='This account is not authorized for AMCY Trader admin access.';return;}
-    beginTrustedSession();
-    try{await invoiceFirebase.signInWithEmailAndPassword(invoiceFirebase.auth,email,password);invoiceCloudOnline=true;}
-    catch(invoiceError){console.error('Invoice vault sign-in failed',invoiceError);invoiceCloudOnline=false;setTimeout(()=>toast('Main workspace connected. Invoice vault needs the same admin login in its Firebase Authentication.','error'),600);}
+    beginTrustedSession();localStorage.setItem(LOCAL_ADMIN_EMAIL_KEY,email);
+    try{await connectInvoiceVault(email,password,{createIfMissing:true});}
+    catch(invoiceError){console.error('Invoice vault sign-in failed',invoiceError);invoiceCloudOnline=false;setTimeout(()=>toast('Main workspace connected. Open Invoice Vault to finish its secure connection.','error'),600);}
   }
   catch(err){console.error(err);const messages={'auth/invalid-credential':'Email or password is incorrect.','auth/user-disabled':'This administrator account is disabled.','auth/too-many-requests':'Too many attempts. Please wait and try again.','auth/network-request-failed':'Network error. Check your connection and try again.'};$('#loginError').textContent=messages[err.code]||`Sign-in failed (${String(err.code||'unknown').replace('auth/','')}).`;}
   finally{setButtonBusy(submit,false);}
@@ -212,7 +299,7 @@ $('#loginForm').addEventListener('submit',async e=>{
 $('#togglePassword').addEventListener('click',e=>{const i=$('#loginPassword');i.type=i.type==='password'?'text':'password';e.target.textContent=i.type==='password'?'Show':'Hide'});
 $('#logoutBtn').addEventListener('click',async()=>{clearTrustedSession();sessionStorage.removeItem(CUSTOMER_ACCESS_SESSION_KEY);clearCustomerWorkspace();if(stopRealtime){stopRealtime();stopRealtime=null;}if(invoiceFirebase&&invoiceUser)await invoiceFirebase.signOut(invoiceFirebase.auth);if(mode==='firebase'&&firebase)await firebase.signOut(firebase.auth);else showAuth()});
 
-const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',quotes:'Quotations','quote-editor':'Build quotation','quote-detail':'Quotation details','customer-access':'Customer access',customers:'Customer management','customer-credit':'Credit control','customer-activity':'Account activity',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings','security-dz':'Security DZ','customer-editor':'Customer details','customer-detail':'Customer account','product-editor':'Product details','movement-editor':'Record stock movement','supplier-editor':'Supplier details','purchase-editor':'New purchase order','invoice-detail':'Invoice details'};
+const titles={dashboard:'Operations overview',inventory:'Inventory control',movements:'Stock movement ledger',sales:'Point of sale',quotes:'Quotations','quote-editor':'Build quotation','quote-detail':'Quotation details','invoice-vault-access':'Invoice vault access','customer-access':'Customer access',customers:'Customer management','customer-credit':'Credit control','customer-activity':'Account activity',purchases:'Purchase orders',suppliers:'Supplier directory',reports:'Reports & insights',audit:'Audit log',settings:'System settings','security-dz':'Security DZ','customer-editor':'Customer details','customer-detail':'Customer account','product-editor':'Product details','movement-editor':'Record stock movement','supplier-editor':'Supplier details','purchase-editor':'New purchase order','invoice-detail':'Invoice details'};
 const CUSTOMER_PROTECTED_VIEWS=new Set(['customers','customer-credit','customer-activity','customer-editor','customer-detail']);
 let pendingCustomerView='customers';
 const customerAccessUnlocked=()=>sessionStorage.getItem(CUSTOMER_ACCESS_SESSION_KEY)==='granted';
@@ -279,25 +366,26 @@ function renderPOS(){
 function cartTotals(){const subtotal=cart.reduce((sum,item)=>{const p=product(item.productId),price=item.price??p?.price??0;return sum+price*item.qty},0),discount=Math.min(Math.max(0,Number($('#saleDiscount')?.value||0)),subtotal),taxable=Math.max(0,subtotal-discount),taxRate=checkoutTaxRateOverride??Math.max(0,Number(state.profile.taxRate||0)),tax=taxable*taxRate/100;return{subtotal,discount,tax,total:taxable+tax,units:cart.reduce((s,i)=>s+i.qty,0)}}
 function renderCart(){
   $('#cartItems').innerHTML=cart.length?cart.map(item=>{const p=product(item.productId),price=item.price??p.price;return `<div class="cart-row"><div><b>${esc(p.name)}</b><small>${money(price)} each · ${money(price*item.qty)}${item.price!=null?' · quoted rate':''}</small></div><div class="qty-control"><button data-cart-change="-1" data-cart-id="${p.id}">−</button><span>${item.qty}</span><button data-cart-change="1" data-cart-id="${p.id}" ${item.qty>=availableStock(p)?'disabled':''}>＋</button></div><button class="cart-remove" data-cart-remove="${p.id}" title="Remove">×</button></div>`}).join(''):'<div class="cart-empty">Select a product to begin this invoice.</div>';
-  const t=cartTotals(),received=Number($('#saleReceived')?.value||t.total),change=$('#salePayment')?.value==='Cash'?Math.max(0,received-t.total):0;$('#cartUnits').textContent=t.units;$('#cartSubtotal').textContent=money(t.subtotal);$('#cartTax').textContent=money(t.tax);$('#cartTotal').textContent=money(t.total);$('#saleChange').textContent=money(change);$('#completeSale').disabled=!cart.length||!cloudOnline;
+  const t=cartTotals(),received=Number($('#saleReceived')?.value||t.total),change=$('#salePayment')?.value==='Cash'?Math.max(0,received-t.total):0;$('#cartUnits').textContent=t.units;$('#cartSubtotal').textContent=money(t.subtotal);$('#cartTax').textContent=money(t.tax);$('#cartTotal').textContent=money(t.total);$('#saleChange').textContent=money(change);$('#completeSale').disabled=!cart.length||currentUser?.uid!==ADMIN_UID;
 }
 function invoiceArchiveRecord(sale){
   const refunded=Number(sale.refundedTotal||0);return {schemaVersion:3,invoice:{number:sale.id,status:refunded>=Number(sale.total||0)?'refunded':refunded>0?'partially_refunded':sale.payment==='Credit'?'credit':'paid',issuedAt:sale.createdAt,dueAt:sale.dueAt||'',quoteId:sale.quoteId||'',archivedAt:new Date().toISOString()},business:{name:state.profile.businessName||'AMCY Trader',location:state.profile.location||'',currency:state.profile.currency||'PKR'},customer:{id:sale.customerId||'',name:sale.customer||'Walk-in customer',phone:sale.phone||'',email:sale.email||''},payment:{method:sale.payment,received:Number(sale.received||sale.total),change:Number(sale.change||0)},totals:{subtotal:Number(sale.subtotal||0),discount:Number(sale.discount||0),tax:Number(sale.tax||0),grandTotal:Number(sale.total||0),refundedTotal:refunded,netTotal:Number(sale.total||0)-refunded,unitCount:toList(sale.items).reduce((n,item)=>n+Number(item.qty||0),0)},items:toList(sale.items).map((item,index)=>({line:index+1,productId:item.productId||'',sku:item.sku||'',name:item.name,quantity:Number(item.qty),returnedQuantity:Number(item.returnedQty||0),unitCost:Number(item.cost||0),unitPrice:Number(item.price),lineTotal:Number(item.qty)*Number(item.price)})),note:sale.note||'',audit:{createdByName:sale.user||'Admin User',createdByEmail:currentUser?.email||'',source:'AMCY Trader POS',mainDatabaseUid:currentUser?.uid||ADMIN_UID}};
 }
 async function archiveInvoice(sale){
   if(!invoiceFirebase||!invoiceUser)throw new Error('Invoice vault is not authenticated');
+  if(!navigator.onLine)throw Object.assign(new Error('Invoice vault will sync when the connection returns.'),{code:'disconnected'});
   const key=String(sale.id).replace(/[.#$\[\]/]/g,'_'),record=invoiceArchiveRecord(sale),root=`invoiceVault/${invoiceUser.uid}`;
   await invoiceFirebase.update(invoiceFirebase.ref(invoiceFirebase.db),{[`${root}/records/${key}`]:record,[`${root}/index/${key}`]:{number:sale.id,quoteId:sale.quoteId||'',customer:sale.customer||'Walk-in customer',total:Number(sale.total||0),refundedTotal:Number(sale.refundedTotal||0),netTotal:Number(sale.total||0)-Number(sale.refundedTotal||0),status:record.invoice.status,payment:sale.payment,issuedAt:sale.createdAt,archivedAt:record.invoice.archivedAt}});
   invoiceCloudOnline=true;return record.invoice.archivedAt;
 }
 async function markInvoiceArchive(invoiceId,status,archivedAt=''){
-  const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);
-  await firebase.runTransaction(root,current=>{const live=normalizeState(current),sale=live.sales.find(item=>item.id===invoiceId);if(sale){sale.invoiceArchiveStatus=status;if(archivedAt)sale.invoiceArchivedAt=archivedAt;}return live;},{applyLocally:false});
+  await runBusinessTransaction(live=>{const sale=live.sales.find(item=>item.id===invoiceId);if(sale){sale.invoiceArchiveStatus=status;if(archivedAt)sale.invoiceArchivedAt=archivedAt;}return live;});
 }
 function renderSales(){
   const q=($('#salesSearch')?.value||'').toLowerCase(),payment=$('#salesPaymentFilter')?.value||'all';
   const sales=[...state.sales].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).filter(s=>{const haystack=[s.id,s.customer,s.phone,s.email,...toList(s.items).flatMap(i=>[i.name,i.sku])].join(' ').toLowerCase();return haystack.includes(q)&&(payment==='all'||s.payment===payment)});
   $('#salesCount').textContent=sales.length;$('#salesRevenue').textContent=money(sales.reduce((sum,s)=>sum+Number(s.total||0)-Number(s.refundedTotal||0),0));
+  $('#invoiceVaultBanner')?.classList.toggle('hidden',invoiceCloudOnline&&!!invoiceUser);
   $('#salesTable').innerHTML=sales.map(s=>{const synced=s.invoiceArchiveStatus==='synced',archiveLabel=synced?'Invoice vault synced':invoiceCloudOnline?'Archive pending':'Vault offline',refunded=Number(s.refundedTotal||0);return `<tr><td><strong>${esc(s.id)}</strong><span class="sync-mark ${synced?'':'pending'}"><i></i>${archiveLabel}</span></td><td>${esc(s.customer||'Walk-in customer')}<br><small>${esc(s.phone||s.email||'')}</small></td><td>${toList(s.items).reduce((n,i)=>n+i.qty,0)} units${refunded?`<br><small>${money(refunded)} refunded</small>`:''}</td><td>${esc(s.payment)}</td><td><strong>${money(Number(s.total||0)-refunded)}</strong></td><td>${formatTime(s.createdAt)}</td><td><div class="invoice-actions"><button class="receipt-btn view" data-view-sale="${s.id}">View</button><button class="receipt-btn" data-print-sale="${s.id}">Print</button>${synced?'':`<button class="receipt-btn" data-sync-sale="${s.id}">Sync</button>`}</div></td></tr>`}).join('')||'<tr><td colspan="7">No invoices match these filters.</td></tr>';
 }
 function quoteStatus(quote){return ['draft','sent'].includes(quote.status)&&quote.validUntil&&new Date(`${quote.validUntil}T23:59:59`)<new Date()?'expired':quote.status||'draft';}
@@ -425,15 +513,15 @@ function selectDangerAction(scope){
   $('#dangerActionTitle').textContent=action.title;$('#dangerActionDescription').textContent=action.description;$('#dangerRequiredPhrase').textContent=action.phrase;$('#dangerConfirmation').classList.remove('hidden');$('#dangerPhraseInput').focus();$('#dangerConfirmation').scrollIntoView({behavior:'smooth',block:'start'});
 }
 async function clearInvoiceVault(){
-  if(!invoiceFirebase||!invoiceUser)throw new Error('The invoice vault is not authenticated. Sign in again before clearing invoices.');
+  if(!navigator.onLine){localStorage.setItem(LOCAL_VAULT_CLEAR_KEY,'true');invoiceCloudOnline=false;return;}
+  if(!invoiceFirebase||!invoiceUser)throw new Error('The invoice vault is not authenticated. Connect it before clearing invoices.');
   await invoiceFirebase.remove(invoiceFirebase.ref(invoiceFirebase.db,`invoiceVault/${invoiceUser.uid}`));invoiceCloudOnline=true;
 }
 async function executeDangerAction(scope){
   if(currentUser?.uid!==ADMIN_UID)throw new Error('Administrator authentication is required.');
   if(scope==='invoices'||scope==='workspace')await clearInvoiceVault();
-  const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),action=dangerActions[scope],deletedAt=new Date().toISOString();
-  const result=await firebase.runTransaction(root,current=>{
-    const live=normalizeState(current);
+  const action=dangerActions[scope],deletedAt=new Date().toISOString();
+  const result=await runBusinessTransaction(live=>{
     if(scope==='workspace'){const profile={...live.profile};return{...blankState(),profile};}
     if(scope==='invoices')live.sales=[];
     if(scope==='quotes')live.quotes=[];
@@ -446,7 +534,7 @@ async function executeDangerAction(scope){
     if(scope==='audit')live.audit=[];
     if(scope!=='audit')live.audit.unshift({id:uid('a'),action:'Security DZ deletion',detail:action.title,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});
     return live;
-  },{applyLocally:false});
+  });
   if(!result.committed)throw new Error('The database did not accept the deletion.');
   state=normalizeState(result.snapshot.val());if(scope==='products'||scope==='workspace'){cart=[];quoteCart=[];activeQuoteId='';checkoutTaxRateOverride=null;}renderAll();
 }
@@ -512,22 +600,41 @@ $('#completeSale').addEventListener('click',async()=>{
   if(payment==='Credit'&&Number(selectedCustomer.creditLimit||0)>0&&customerBalance(selectedCustomer)+totals.total>Number(selectedCustomer.creditLimit)){if(printWindow)printWindow.close();$('#saleError').textContent=`This sale exceeds ${selectedCustomer.name}'s ${money(selectedCustomer.creditLimit)} credit limit.`;return;}
   const button=$('#completeSale');setButtonBusy(button,true,'Completing sale');
   try{
-    const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`);const result=await firebase.runTransaction(root,current=>{const live=normalizeState(current);if(live.sales.some(s=>s.id===sale.id))throw new Error('Invoice number is already in use. Reload and try again.');for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId);if(!p||availableStock(p)<item.qty)throw new Error(`${item.name} no longer has enough available stock`);}for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId),before=p.stock;p.stock-=item.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'out',qty:item.qty,before,after:p.stock,reference:sale.id,note:`Customer sale — ${sale.customer}`,createdAt:sale.createdAt,user:sale.user});}live.sales.unshift(sale);if(sale.quoteId){const linked=live.quotes.find(q=>q.id===sale.quoteId);if(linked){linked.status='converted';linked.convertedSaleId=sale.id;linked.convertedAt=sale.createdAt;linked.updatedAt=sale.createdAt;}}live.profile.nextInvoiceNumber=invoiceNo+1;live.audit.unshift({id:uid('a'),action:'Sale completed',detail:`${sale.id} for ${sale.customer} — ${money(sale.total)}${sale.quoteId?` from ${sale.quoteId}`:''}`,createdAt:sale.createdAt,user:sale.user});return live;},{applyLocally:false});
+    const result=await runBusinessTransaction(live=>{if(live.sales.some(s=>s.id===sale.id))throw new Error('Invoice number is already in use. Reload and try again.');for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId);if(!p||availableStock(p)<item.qty)throw new Error(`${item.name} no longer has enough available stock`);}for(const item of sale.items){const p=live.products.find(x=>x.id===item.productId),before=p.stock;p.stock-=item.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'out',qty:item.qty,before,after:p.stock,reference:sale.id,note:`Customer sale — ${sale.customer}`,createdAt:sale.createdAt,user:sale.user});}live.sales.unshift(sale);if(sale.quoteId){const linked=live.quotes.find(q=>q.id===sale.quoteId);if(linked){linked.status='converted';linked.convertedSaleId=sale.id;linked.convertedAt=sale.createdAt;linked.updatedAt=sale.createdAt;}}live.profile.nextInvoiceNumber=invoiceNo+1;live.audit.unshift({id:uid('a'),action:'Sale completed',detail:`${sale.id} for ${sale.customer} — ${money(sale.total)}${sale.quoteId?` from ${sale.quoteId}`:''}`,createdAt:sale.createdAt,user:sale.user});return live;});
     if(!result.committed)throw new Error('Sale could not be committed');
     try{const archivedAt=await archiveInvoice(sale);sale.invoiceArchiveStatus='synced';sale.invoiceArchivedAt=archivedAt;await markInvoiceArchive(sale.id,'synced',archivedAt);}
     catch(archiveError){console.error(archiveError);invoiceCloudOnline=false;toast('Sale saved. Invoice vault sync is pending—use Sync from invoice history.','error');}
     cart=[];activeQuoteId='';checkoutTaxRateOverride=null;$('#saleCustomerId').value='';$('#saleCustomerId').dispatchEvent(new Event('change',{bubbles:true}));$('#saleCustomerId')._refreshCustom?.();$('#saleDiscount').value=0;$('#saleReceived').value='';$('#saleNote').value='';$('#salePayment').value='Cash';$('#amountReceivedLabel').classList.remove('hidden');renderCart();toast(`${sale.id} completed`);printReceipt(sale,printWindow);
   }catch(error){console.error(error);if(printWindow)printWindow.close();$('#saleError').textContent=error.message||'Sale could not be completed. Please retry.';}
-  finally{setButtonBusy(button,false);button.disabled=!cart.length||!cloudOnline;}
+  finally{setButtonBusy(button,false);button.disabled=!cart.length||currentUser?.uid!==ADMIN_UID;}
 });
-$('#salesTable').addEventListener('click',async e=>{const print=e.target.closest('[data-print-sale]'),view=e.target.closest('[data-view-sale]'),sync=e.target.closest('[data-sync-sale]'),id=print?.dataset.printSale||view?.dataset.viewSale||sync?.dataset.syncSale;if(!id)return;const sale=state.sales.find(s=>s.id===id);if(!sale)return;if(print)printReceipt(sale);if(view)openInvoiceDetail(sale);if(sync){setButtonBusy(sync,true,'Syncing');try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} synced to invoice vault`);}catch(error){console.error(error);toast('Invoice vault unavailable. Confirm the same admin login exists in the invoice project.','error');}finally{setButtonBusy(sync,false);}}});
+$('#openInvoiceVaultAccess').addEventListener('click',()=>openInvoiceVaultAccess());
+$('#invoiceVaultAccessForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const password=$('#invoiceVaultPassword').value,error=$('#invoiceVaultAccessError'),button=$('#invoiceVaultAccessForm button[type="submit"]');
+  error.textContent='';$('#invoiceVaultPasswordError').textContent='';
+  if(!password){$('#invoiceVaultPasswordError').textContent='Enter the administrator password.';$('#invoiceVaultPassword').focus();return;}
+  setButtonBusy(button,true,'Connecting');
+  try{
+    await connectInvoiceVault(currentUser?.email||$('#invoiceVaultEmail').value,password,{createIfMissing:true});
+    const queuedId=pendingInvoiceSyncId;pendingInvoiceSyncId='';
+    if(queuedId){const sale=state.sales.find(item=>item.id===queuedId);if(sale){const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} connected and synced`);}}
+    else toast('Invoice vault connected');
+    renderSales();go('sales');
+  }catch(connectError){
+    console.error(connectError);
+    const messages={'auth/wrong-password':'The password does not match the invoice vault account.','auth/invalid-credential':'The administrator email or password is incorrect.','auth/too-many-requests':'Too many attempts. Wait a moment and try again.','auth/operation-not-allowed':'Enable Email/Password sign-in in the invoice project.','auth/network-request-failed':'Network error. Check your connection and try again.'};
+    error.textContent=connectError.message&&!String(connectError.message).startsWith('Firebase:')?connectError.message:messages[connectError.code]||'Invoice vault could not be connected.';
+  }finally{setButtonBusy(button,false);}
+});
+$('#salesTable').addEventListener('click',async e=>{const print=e.target.closest('[data-print-sale]'),view=e.target.closest('[data-view-sale]'),sync=e.target.closest('[data-sync-sale]'),id=print?.dataset.printSale||view?.dataset.viewSale||sync?.dataset.syncSale;if(!id)return;const sale=state.sales.find(s=>s.id===id);if(!sale)return;if(print)printReceipt(sale);if(view)openInvoiceDetail(sale);if(sync){if(!invoiceUser){openInvoiceVaultAccess(id);return;}setButtonBusy(sync,true,'Syncing');try{const archivedAt=await archiveInvoice(sale);await markInvoiceArchive(sale.id,'synced',archivedAt);toast(`${sale.id} synced to invoice vault`);}catch(error){console.error(error);invoiceCloudOnline=false;renderSales();openInvoiceVaultAccess(id);}finally{setButtonBusy(sync,false);}}});
 $('#invoiceDetailPrint').addEventListener('click',()=>{const sale=state.sales.find(item=>item.id===$('#view-invoice-detail').dataset.saleId);if(sale)printReceipt(sale)});
 $('#invoiceDetailShare').addEventListener('click',async()=>{const sale=state.sales.find(item=>item.id===$('#view-invoice-detail').dataset.saleId);if(!sale)return;const text=`${state.profile.businessName||'AMCY Trader'} invoice ${sale.id}\nCustomer: ${sale.customer||'Walk-in customer'}\nTotal: ${money(sale.total)}\nDate: ${formatTime(sale.createdAt)}`;try{if(navigator.share)await navigator.share({title:`Invoice ${sale.id}`,text});else{await navigator.clipboard.writeText(text);toast('Invoice summary copied');}}catch(error){if(error?.name!=='AbortError')toast('Invoice could not be shared.','error');}});
 $('#invoiceDetailReturn').addEventListener('click',async event=>{
   const invoiceId=$('#view-invoice-detail').dataset.saleId,sale=state.sales.find(item=>item.id===invoiceId),selections=$$('[data-return-line]',$('#invoiceDetailBody')).map(input=>({index:Number(input.dataset.returnLine),qty:Number(input.value||0)})).filter(item=>item.qty>0),error=$('#invoiceReturnError');if(error)error.textContent='';if(!sale||!selections.length){if(error)error.textContent='Enter a return quantity for at least one item.';return;}
   for(const selection of selections){const item=sale.items[selection.index],remaining=Number(item.qty||0)-Number(item.returnedQty||0);if(!Number.isInteger(selection.qty)||selection.qty<1||selection.qty>remaining){error.textContent=`Return quantity for ${item.name} must be between 1 and ${remaining}.`;return;}}
   const gross=selections.reduce((sum,x)=>sum+Number(sale.items[x.index].price||0)*x.qty,0),ratio=Number(sale.subtotal||0)>0?gross/Number(sale.subtotal):0,refund=Math.min(Number(sale.total||0)-Number(sale.refundedTotal||0),ratio*Number(sale.total||0)),button=event.currentTarget;setButtonBusy(button,true,'Processing return');
-  try{const now=new Date().toISOString(),root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),result=await firebase.runTransaction(root,current=>{const live=normalizeState(current),liveSale=live.sales.find(s=>s.id===invoiceId);if(!liveSale)throw new Error('Invoice no longer exists');const returnLines=[];for(const selection of selections){const line=liveSale.items[selection.index];if(!line)throw new Error('Invoice line no longer exists. Reload and try again.');const remaining=Number(line.qty||0)-Number(line.returnedQty||0);if(selection.qty>remaining)throw new Error('Return quantities changed. Reload and try again.');line.returnedQty=Number(line.returnedQty||0)+selection.qty;const p=live.products.find(x=>x.id===line.productId);if(p){const before=Number(p.stock||0);p.stock=before+selection.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'in',qty:selection.qty,before,after:p.stock,reference:invoiceId,note:'Customer return',createdAt:now,user:live.profile.adminName});}returnLines.push({productId:line.productId,name:line.name,sku:line.sku,qty:selection.qty,unitPrice:Number(line.price||0)});}liveSale.refundedTotal=Number(liveSale.refundedTotal||0)+refund;liveSale.invoiceArchiveStatus='pending';live.returns.unshift({id:uid('ret'),invoiceId,customerId:liveSale.customerId||'',customer:liveSale.customer,items:returnLines,refundAmount:refund,createdAt:now,user:live.profile.adminName});live.audit.unshift({id:uid('a'),action:'Invoice return processed',detail:`${invoiceId} — ${money(refund)} refunded`,createdAt:now,user:live.profile.adminName});return live;},{applyLocally:false});if(!result.committed)throw new Error('Return could not be committed');const updated=normalizeState(result.snapshot.val()).sales.find(s=>s.id===invoiceId);try{const archivedAt=await archiveInvoice(updated);await markInvoiceArchive(invoiceId,'synced',archivedAt);}catch(archiveError){console.error(archiveError);toast('Return saved. Invoice vault resync is pending.','error');}openInvoiceDetail(updated);toast(`Return completed — ${money(refund)} refunded`);}catch(saveError){console.error(saveError);if(error)error.textContent=saveError.message||'Return could not be saved.';}finally{setButtonBusy(button,false);}
+  try{const now=new Date().toISOString(),result=await runBusinessTransaction(live=>{const liveSale=live.sales.find(s=>s.id===invoiceId);if(!liveSale)throw new Error('Invoice no longer exists');const returnLines=[];for(const selection of selections){const line=liveSale.items[selection.index];if(!line)throw new Error('Invoice line no longer exists. Reload and try again.');const remaining=Number(line.qty||0)-Number(line.returnedQty||0);if(selection.qty>remaining)throw new Error('Return quantities changed. Reload and try again.');line.returnedQty=Number(line.returnedQty||0)+selection.qty;const p=live.products.find(x=>x.id===line.productId);if(p){const before=Number(p.stock||0);p.stock=before+selection.qty;live.movements.unshift({id:uid('m'),productId:p.id,type:'in',qty:selection.qty,before,after:p.stock,reference:invoiceId,note:'Customer return',createdAt:now,user:live.profile.adminName});}returnLines.push({productId:line.productId,name:line.name,sku:line.sku,qty:selection.qty,unitPrice:Number(line.price||0)});}liveSale.refundedTotal=Number(liveSale.refundedTotal||0)+refund;liveSale.invoiceArchiveStatus='pending';live.returns.unshift({id:uid('ret'),invoiceId,customerId:liveSale.customerId||'',customer:liveSale.customer,items:returnLines,refundAmount:refund,createdAt:now,user:live.profile.adminName});live.audit.unshift({id:uid('a'),action:'Invoice return processed',detail:`${invoiceId} — ${money(refund)} refunded`,createdAt:now,user:live.profile.adminName});return live;});if(!result.committed)throw new Error('Return could not be committed');const updated=normalizeState(result.snapshot.val()).sales.find(s=>s.id===invoiceId);try{const archivedAt=await archiveInvoice(updated);await markInvoiceArchive(invoiceId,'synced',archivedAt);}catch(archiveError){console.error(archiveError);toast('Return saved. Invoice vault resync is pending.','error');}openInvoiceDetail(updated);toast(`Return completed — ${money(refund)} refunded`);}catch(saveError){console.error(saveError);if(error)error.textContent=saveError.message||'Return could not be saved.';}finally{setButtonBusy(button,false);}
 });
 $('#poTabs').addEventListener('click',e=>{const b=e.target.closest('[data-po]');if(!b)return;poFilter=b.dataset.po;$$('#poTabs button').forEach(x=>x.classList.toggle('active',x===b));renderPurchases()});
 
@@ -593,7 +700,7 @@ $('#productForm').addEventListener('submit',async e=>{
 $('#inventoryTable').addEventListener('click',async e=>{const b=e.target.closest('[data-product-menu]');if(!b)return;const p=product(b.dataset.productMenu);if(!p)return;$('#productForm').reset();clearFormErrors($('#productForm'));$('#productId').value=p.id;$('#productName').value=p.name;$('#productSku').value=p.sku;$('#productBarcode').value=p.barcode||'';$('#productVariant').value=p.variant||'';$('#productCategory').value=p.category;$('#productStock').value=p.stock;$('#productReserved').value=p.reserved||'';$('#productDamaged').value=p.damaged||'';$('#productReorder').value=p.reorder;$('#productCost').value=p.cost;$('#productPrice').value=p.price;$('#productWarehouse').value=p.warehouse||state.profile.defaultWarehouse||'';$('#productBatch').value=p.batch||'';$('#productExpiry').value=p.expiry||'';$('#productSupplier').value=p.supplierId||'';$('#productModalTitle').textContent='Edit product';$('#productDeleteZone').classList.remove('hidden');$('#deleteProductConfirm').classList.add('hidden');refreshCustomSelects();go('product-editor')});
 $('#deleteProductBtn').addEventListener('click',()=>{const p=product($('#productId').value);if(!p)return;$('#deleteProductName').textContent=`${p.name} (${p.sku})`;$('#deleteProductError').textContent='';$('#deleteProductConfirm').classList.remove('hidden');$('#deleteProductConfirm').scrollIntoView({behavior:'smooth',block:'center'});});
 $('[data-cancel-delete]').addEventListener('click',()=>$('#deleteProductConfirm').classList.add('hidden'));
-$('#confirmDeleteProduct').addEventListener('click',async()=>{const id=$('#productId').value,p=product(id),button=$('#confirmDeleteProduct');if(!p)return;setButtonBusy(button,true,'Deleting');$('#deleteProductError').textContent='';try{const root=firebase.ref(firebase.db,`businesses/${ADMIN_UID}`),deletedAt=new Date().toISOString(),result=await firebase.runTransaction(root,current=>{const live=normalizeState(current),target=live.products.find(item=>item.id===id);if(!target)return;live.products=live.products.filter(item=>item.id!==id);live.audit.unshift({id:uid('a'),action:'Product deleted',detail:`${target.name} (${target.sku}) was permanently removed from active inventory`,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});return live;},{applyLocally:false});if(!result.committed)throw new Error('Product was already removed or could not be deleted');cart=cart.filter(item=>item.productId!==id);go('inventory');toast(`${p.name} deleted`);}catch(error){console.error(error);$('#deleteProductError').textContent=error.message||'Product could not be deleted.';}finally{setButtonBusy(button,false);}});
+$('#confirmDeleteProduct').addEventListener('click',async()=>{const id=$('#productId').value,p=product(id),button=$('#confirmDeleteProduct');if(!p)return;setButtonBusy(button,true,'Deleting');$('#deleteProductError').textContent='';try{const deletedAt=new Date().toISOString(),result=await runBusinessTransaction(live=>{const target=live.products.find(item=>item.id===id);if(!target)return;live.products=live.products.filter(item=>item.id!==id);live.audit.unshift({id:uid('a'),action:'Product deleted',detail:`${target.name} (${target.sku}) was permanently removed from active inventory`,createdAt:deletedAt,user:live.profile.adminName||'Admin User'});return live;});if(!result.committed)throw new Error('Product was already removed or could not be deleted');cart=cart.filter(item=>item.productId!==id);go('inventory');toast(`${p.name} deleted`);}catch(error){console.error(error);$('#deleteProductError').textContent=error.message||'Product could not be deleted.';}finally{setButtonBusy(button,false);}});
 function updateStockHint(){const p=product($('#movementProduct').value);$('#currentStockHint').textContent=p?`Current stock: ${p.stock} units`:'Current stock: —'}
 $('#movementProduct').addEventListener('change',updateStockHint);
 $('#movementForm').addEventListener('submit',async e=>{
@@ -648,6 +755,9 @@ function renderSearch(q){q=q.toLowerCase();const customerResults=customerAccessU
 $('#searchResults').addEventListener('click',e=>{const b=e.target.closest('[data-result-view]');if(b){go(b.dataset.resultView);$('#searchOverlay').classList.add('hidden')}});
 
 function toast(message,type='success'){const el=document.createElement('div');el.className=`toast ${type}`;el.textContent=message;$('#toastContainer').append(el);setTimeout(()=>el.remove(),3200)}
+
+window.addEventListener('offline',()=>{if(currentUser?.uid===ADMIN_UID){cloudOnline=false;cacheState();updateSync();toast('Offline mode active. Changes will stay on this device.','error');}});
+window.addEventListener('online',()=>{if(currentUser?.uid===ADMIN_UID){toast('Connection restored. Syncing changes…');syncOfflineChanges();}});
 
 // Structured tools for compatible AI browsers.
 const modelContext=document.modelContext;
